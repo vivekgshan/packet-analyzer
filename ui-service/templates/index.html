@@ -157,16 +157,30 @@ function refreshSummary() {
     });
 }
 
+// ✅ Poll status API and update status line
+function updateStatus() {
+    fetch("/api/status")
+      .then(res => res.json())
+      .then(data => {
+          if (data.running) {
+              let iface = data.iface ? ` (Interface: ${data.iface})` : "";
+              document.getElementById("sniff-status").innerText = "✅ Sniffing Started" + iface;
+              document.getElementById("sniff-status").className = "status-running";
+          } else {
+              document.getElementById("sniff-status").innerText = "🛑 Sniffing Stopped";
+              document.getElementById("sniff-status").className = "status-stopped";
+          }
+      })
+      .catch(() => {
+          document.getElementById("sniff-status").innerText = "⚠️ Status unavailable";
+          document.getElementById("sniff-status").className = "status-idle";
+      });
+}
+
 // Sniffing Controls
 function startSniffing() {
     fetch("/api/start_sniffing", { method: "POST" })
-        .then(res => res.json())
-        .then(data => {
-            // Access iface under "response"
-            let iface = data.response && data.response.iface ? ` (Interface: ${data.response.iface})` : "";
-            document.getElementById("sniff-status").innerText = "✅ Sniffing Started" + iface;
-            document.getElementById("sniff-status").className = "status-running";
-        })
+        .then(() => updateStatus())
         .catch(err => {
             document.getElementById("sniff-status").innerText = "❌ Error starting sniffing";
         });
@@ -174,11 +188,7 @@ function startSniffing() {
 
 function stopSniffing() {
     fetch("/api/stop_sniffing", { method: "POST" })
-        .then(res => res.json())
-        .then(() => {
-            document.getElementById("sniff-status").innerText = "🛑 Sniffing Stopped";
-            document.getElementById("sniff-status").className = "status-stopped";
-        })
+        .then(() => updateStatus())
         .catch(err => {
             document.getElementById("sniff-status").innerText = "❌ Error stopping sniffing";
         });
@@ -193,6 +203,12 @@ $(document).ready(function () {
 
   // auto refresh every 2s
   setInterval(refreshSummary, 2000);
+
+  // auto refresh status every 2s
+  setInterval(updateStatus, 2000);
+
+  // run once immediately
+  updateStatus();
 });
 </script>
 </body>
