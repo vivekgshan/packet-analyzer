@@ -67,7 +67,7 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "<YOUR_HEC_TOKEN>"
+        splunk-token: "f9cf68d8-77bd-4e17-8353-a076273c9870"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "persistor-service"
@@ -89,7 +89,7 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "<YOUR_HEC_TOKEN>"
+        splunk-token: "f9cf68d8-77bd-4e17-8353-a076273c9870"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "parser-service"
@@ -111,7 +111,7 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "<YOUR_HEC_TOKEN>"
+        splunk-token: "f9cf68d8-77bd-4e17-8353-a076273c9870"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "analyzer-service"
@@ -132,7 +132,7 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "<YOUR_HEC_TOKEN>"
+        splunk-token: "f9cf68d8-77bd-4e17-8353-a076273c9870"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "ui-service"
@@ -157,7 +157,7 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"   # uses host mode, so localhost works
-        splunk-token: "<YOUR_HEC_TOKEN>"
+        splunk-token: "f9cf68d8-77bd-4e17-8353-a076273c9870"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "capture-service"
