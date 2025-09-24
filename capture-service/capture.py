@@ -13,9 +13,15 @@ PARSER_URL = "http://127.0.0.1:5001/parse"
 sniff_thread = None
 stop_flag = False
 
+# For rate-limited logging
+packet_count = 0
+last_log_time = time.time()
+
 
 def send_packet(pkt, source="LIVE"):
-    """Send packet data to parser service"""
+    """Send packet data to parser service with rate-limited logging"""
+    global packet_count, last_log_time
+    packet_count += 1
     data = {
         "raw": pkt.summary(),
         "hex": bytes(pkt).hex(),
@@ -24,13 +30,16 @@ def send_packet(pkt, source="LIVE"):
     try:
         resp = requests.post(PARSER_URL, json=data, timeout=3)
         if resp.status_code == 200:
-            logging.info(f"📤 Sent packet → {source} {data.get('raw')[:50]}")
+            # ✅ log every 100 packets OR every 5s
+            if packet_count % 100 == 0 or (time.time() - last_log_time) > 5:
+                logging.info(f"📤 Sent {packet_count} packets so far (latest={data['raw'][:50]})")
+                last_log_time = time.time()
     except Exception as e:
         logging.error(f"❌ Error sending to parser: {e}")
 
 
 def get_default_iface():
-    """Auto-detect interface with logging"""
+    """Auto-detect interface with logging (psutil)"""
     iface = os.getenv("IFACE")
     if iface:
         logging.info(f"🔧 Using IFACE from env: {iface}")
@@ -59,8 +68,10 @@ def get_default_iface():
 
 def run_sniffer(mode="LIVE", pcap_file=None):
     """Run live or PCAP sniffing"""
-    global stop_flag
+    global stop_flag, packet_count, last_log_time
     stop_flag = False
+    packet_count = 0
+    last_log_time = time.time()
     time.sleep(2)
 
     if mode.upper() == "LIVE":
@@ -70,7 +81,7 @@ def run_sniffer(mode="LIVE", pcap_file=None):
             iface=iface,
             prn=lambda pkt: send_packet(pkt, source="LIVE"),
             store=False,
-            stop_filter=lambda pkt: stop_flag   # ✅ stop sniffing gracefully
+            stop_filter=lambda pkt: stop_flag      # ✅ stop sniffing gracefully
         )
         logging.info("🛑 Sniffing stopped (LIVE mode).")
 
@@ -103,10 +114,11 @@ def start_sniffing():
 
     mode = request.args.get("mode", "LIVE")
     pcap_file = request.args.get("file")
+    iface = get_default_iface()
 
     sniff_thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file))
     sniff_thread.start()
-    return jsonify({"status": f"sniffing_started_{mode}", "pcap": pcap_file})
+    return jsonify({"status": f"sniffing_started_{mode}", "pcap": pcap_file, "iface": iface})
 
 
 @app.route("/stop_sniffing", methods=["POST"])
