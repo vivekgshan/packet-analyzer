@@ -60,6 +60,18 @@ def stop_sniffing():
         logging.error(f"❌ Failed to stop sniffing: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/status", methods=["GET"])
+def api_status():
+    try:
+        logging.info("ℹ️ Forwarding status request to capture-service...")
+        res = requests.get(f"{CAPTURE_URL}/status")
+        logging.info(f"✅ Capture-service status response: {res.json()}")
+        return jsonify(res.json())
+    except Exception as e:
+        logging.error(f"❌ Failed to get status: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # -------------------------------------------------------------------
 # UI Route
 # -------------------------------------------------------------------
