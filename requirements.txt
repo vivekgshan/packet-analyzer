@@ -5,4 +5,4 @@ scapy
 requests
 pytz
 gunicorn
-netifaces
+psutil
