@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from scapy.all import sniff, rdpcap, get_if_list
 from scapy.utils import PcapReader
-import requests, time, os, threading, logging, psutil
+import requests, time, os, threading, logging, psutil,socket
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -39,32 +39,55 @@ def send_packet(pkt, source="LIVE"):
         logging.error(f"❌ Error sending to parser: {e}")
 
 
-def get_default_iface():
-    """Auto-detect interface with logging (psutil)"""
-    iface = os.getenv("IFACE")
-    if iface:
-        logging.info(f"🔧 Using IFACE from env: {iface}")
-        return iface
 
+def get_default_iface():
+    """Auto-detect the default network interface for outbound traffic."""
+
+    try:
+        # 🔹 Create a temporary UDP socket
+        # (UDP is used here because it's connectionless and very lightweight)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        # 🔹 "Connect" to 8.8.8.8:80 (Google DNS)
+        # 👉 Important: no packets are actually sent!
+        # This only asks the kernel:
+        #   "If I wanted to reach 8.8.8.8:80, which local IP/interface would I use?"
+        s.connect(("8.8.8.8", 80))
+
+        # 🔹 Get the local IP address the OS chose
+        local_ip = s.getsockname()[0]
+
+        # 🔹 Find the network interface name that owns this local IP
+        for iface, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.address == local_ip:
+                    logging.info(f"✅ Default route resolved: {iface} ({local_ip})")
+                    return iface
+
+    except Exception as e:
+        logging.warning(f"⚠️ Could not auto-detect default interface: {e}")
+
+    finally:
+        s.close()
+
+    # 🔹 Fallbacks in case auto-detect fails
     available = list(psutil.net_if_addrs().keys())
     logging.info(f"🌐 Available interfaces: {available}")
 
-    # Step 1: Preferred interfaces
-    preferred = ["eth0", "ens5", "enp39s0", "wlan0"]
-    for cand in preferred:
-        if cand in available:
-            logging.info(f"✅ Selected preferred interface: {cand}")
-            return cand
-
-    # Step 2: First non-loopback
+    # Step 1: Pick the first non-loopback interface
+    # 👉 Loopback ("lo") is the internal-only interface.
+    #    We avoid it if there are real network interfaces available.
     for cand in available:
-        if cand != "lo":
-            logging.info(f"🌐 Fallback: auto-selected first non-loopback interface: {cand}")
+        if cand != "lo":  # skip loopback if possible
+            logging.info(f"🌐 Fallback: using {cand}")
             return cand
 
-    # Step 3: Absolute fallback
-    logging.warning("⚠️ No external interfaces found. Using loopback 'lo'")
+    # Step 2: Absolute last resort
+    # 👉 If only "lo" exists (for example in very isolated environments
+    #    or inside some containers), then we must use it.
+    logging.warning("⚠️ No external interface found, using loopback 'lo'")
     return "lo"
+
 
 
 def run_sniffer(mode="LIVE", pcap_file=None):
