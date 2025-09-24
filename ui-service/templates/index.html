@@ -162,7 +162,8 @@ function startSniffing() {
     fetch("/api/start_sniffing", { method: "POST" })
         .then(res => res.json())
         .then(data => {
-            let iface = data.iface ? ` (Interface: ${data.iface})` : "";
+            // Access iface under "response"
+            let iface = data.response && data.response.iface ? ` (Interface: ${data.response.iface})` : "";
             document.getElementById("sniff-status").innerText = "✅ Sniffing Started" + iface;
             document.getElementById("sniff-status").className = "status-running";
         })
