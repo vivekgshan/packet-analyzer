@@ -42,6 +42,19 @@ def send_packet(pkt, source="LIVE"):
 
 def get_default_iface():
     """Auto-detect the default network interface for outbound traffic."""
+    """Detect active default network interface reliably."""
+    iface = os.getenv("IFACE")
+    if iface:
+        logging.info(f"🔧 Using IFACE from env: {iface}")
+        return iface
+
+    # find default route interface
+    gws = psutil.net_if_stats()
+    addrs = psutil.net_if_addrs()
+
+    # get routes to check default gateway
+    routes = psutil.net_if_stats()
+    # psutil doesn't give default gw directly, so use socket trick:
 
     try:
         # 🔹 Create a temporary UDP socket
