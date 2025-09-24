@@ -57,6 +57,10 @@ def get_default_iface():
         # 🔹 Get the local IP address the OS chose
         local_ip = s.getsockname()[0]
 
+        # 🔹 Log all available interfaces.just printing avaialble inetrfaces
+        available = psutil.net_if_addrs()
+        logging.info(f"🌐 Available interfaces: {list(available.keys())}")
+        
         # 🔹 Find the network interface name that owns this local IP
         for iface, addrs in psutil.net_if_addrs().items():
             for addr in addrs:
