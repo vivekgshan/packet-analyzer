@@ -117,6 +117,12 @@ def start_sniffing():
     mode = request.args.get("mode", "LIVE")
     pcap_file = request.args.get("file")
 
+     # Detect iface before starting thread
+    if mode.upper() == "LIVE":
+        current_iface = get_default_iface()
+    else:
+        current_iface = None
+        
     sniff_thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file))
     sniff_thread.start()
 
