@@ -1,13 +1,13 @@
 from flask import Flask, request, jsonify
 from scapy.all import sniff, rdpcap, get_if_list
 from scapy.utils import PcapReader
-import requests, time, os, threading, logging, netifaces
+import requests, time, os, threading, logging, psutil
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # Parser endpoint inside Docker network
-#PARSER_URL = "http://parser-service:5001/parse"
+# PARSER_URL = "http://parser-service:5001/parse"
 PARSER_URL = "http://127.0.0.1:5001/parse"
 
 sniff_thread = None
@@ -24,42 +24,37 @@ def send_packet(pkt, source="LIVE"):
     try:
         resp = requests.post(PARSER_URL, json=data, timeout=3)
         if resp.status_code == 200:
-            logging.info(f"Sent packet → {source} {data.get('raw')[:50]}")
+            logging.info(f"📤 Sent packet → {source} {data.get('raw')[:50]}")
     except Exception as e:
-        logging.error(f"Error sending to parser: {e}")
+        logging.error(f"❌ Error sending to parser: {e}")
 
 
 def get_default_iface():
-    """Auto-detect the default host network interface"""
-    # 1. Check env var (manual override)
+    """Auto-detect interface with logging"""
     iface = os.getenv("IFACE")
-    if iface and iface in get_if_list():
-        logging.info(f"🌐 Using IFACE from env: {iface}")
+    if iface:
+        logging.info(f"🔧 Using IFACE from env: {iface}")
         return iface
 
-    # 2. Try to detect default gateway interface
-    try:
-        gws = netifaces.gateways()
-        if 'default' in gws and netifaces.AF_INET in gws['default']:
-            iface = gws['default'][netifaces.AF_INET][1]
-            logging.info(f"🌐 Auto-detected default interface: {iface}")
-            return iface
-    except Exception as e:
-        logging.warning(f"⚠️ Failed to detect interface via gateways: {e}")
+    available = list(psutil.net_if_addrs().keys())
+    logging.info(f"🌐 Available interfaces: {available}")
 
-    # 3. Fallback: check common names
-    for candidate in ["ens5", "eth0", "enp39s0", "wlan0", "lo"]:
-        if candidate in get_if_list():
-            logging.info(f"🌐 Fallback interface detected: {candidate}")
-            return candidate
+    # Step 1: Preferred interfaces
+    preferred = ["eth0", "ens5", "enp39s0", "wlan0"]
+    for cand in preferred:
+        if cand in available:
+            logging.info(f"✅ Selected preferred interface: {cand}")
+            return cand
 
-    # 4. Last resort: pick first available
-    available = get_if_list()
-    if available:
-        logging.info(f"🌐 Defaulting to first available interface: {available[0]}")
-        return available[0]
+    # Step 2: First non-loopback
+    for cand in available:
+        if cand != "lo":
+            logging.info(f"🌐 Fallback: auto-selected first non-loopback interface: {cand}")
+            return cand
 
-    raise RuntimeError("❌ No suitable network interface found. Available: " + str(get_if_list()))
+    # Step 3: Absolute fallback
+    logging.warning("⚠️ No external interfaces found. Using loopback 'lo'")
+    return "lo"
 
 
 def run_sniffer(mode="LIVE", pcap_file=None):
