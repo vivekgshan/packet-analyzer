@@ -1,6 +1,27 @@
 version: "3.9"
 
 services:
+  # ----------------------
+  # Splunk Enterprise
+  # ----------------------
+  splunk:
+    image: splunk/splunk:latest
+    container_name: splunk
+    environment:
+      SPLUNK_START_ARGS: "--accept-license"
+      SPLUNK_PASSWORD: "changeme123"   # default admin password
+    ports:
+      - "8000:8000"   # Splunk UI
+      - "8088:8088"   # HEC (for logs)
+    networks:
+      - packet-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
   db:
     image: postgres:15
     container_name: db
@@ -42,15 +63,17 @@ services:
       - "5002:5002"
     networks:
       - packet-net
+    logging:
+      driver: splunk
+      options:
+        splunk-url: "http://splunk:8088"
+        splunk-token: "<YOUR_HEC_TOKEN>"
+        splunk-insecureskipverify: "true"
+        splunk-format: "json"
+        tag: "persistor-service"
     depends_on:
       db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c 'import urllib.request; exit(0) if urllib.request.urlopen(\"http://localhost:5002/health\").read().decode() == \"OK\" else exit(1)'"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
 
   parser-service:
     image: ${DOCKERHUB_USER}/parser-service:latest
@@ -62,15 +85,17 @@ services:
       - "5001:5001"
     networks:
       - packet-net
+    logging:
+      driver: splunk
+      options:
+        splunk-url: "http://splunk:8088"
+        splunk-token: "<YOUR_HEC_TOKEN>"
+        splunk-insecureskipverify: "true"
+        splunk-format: "json"
+        tag: "parser-service"
     depends_on:
       persistor-service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c 'import urllib.request; exit(0) if urllib.request.urlopen(\"http://localhost:5001/health\").read().decode() == \"OK\" else exit(1)'"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
+        condition: service_started
 
   analyzer-service:
     image: ${DOCKERHUB_USER}/analyzer-service:latest
@@ -82,15 +107,17 @@ services:
       - "5003:5003"
     networks:
       - packet-net
+    logging:
+      driver: splunk
+      options:
+        splunk-url: "http://splunk:8088"
+        splunk-token: "<YOUR_HEC_TOKEN>"
+        splunk-insecureskipverify: "true"
+        splunk-format: "json"
+        tag: "analyzer-service"
     depends_on:
       parser-service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c 'import urllib.request; exit(0) if urllib.request.urlopen(\"http://localhost:5003/health\").read().decode() else exit(1)'"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
+        condition: service_started
 
   ui-service:
     image: ${DOCKERHUB_USER}/ui-service:latest
@@ -101,17 +128,19 @@ services:
       - "5000:5000"
     networks:
       - packet-net
+    logging:
+      driver: splunk
+      options:
+        splunk-url: "http://splunk:8088"
+        splunk-token: "<YOUR_HEC_TOKEN>"
+        splunk-insecureskipverify: "true"
+        splunk-format: "json"
+        tag: "ui-service"
     depends_on:
       analyzer-service:
-        condition: service_healthy
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c 'import urllib.request; exit(0) if urllib.request.urlopen(\"http://localhost:5000\").read().decode() else exit(1)'"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
 
   capture-service:
     image: ${DOCKERHUB_USER}/capture-service:latest
@@ -119,11 +148,19 @@ services:
     environment:
       SERVICE_PORT: 5004
       IFACE: ens5   # match your EC2 NIC
-    network_mode: "host"   # ✅ critical for sniffing
+    network_mode: "host"
     cap_add:
       - NET_ADMIN
       - NET_RAW
     restart: always
+    logging:
+      driver: splunk
+      options:
+        splunk-url: "http://localhost:8088"   # uses host mode, so localhost works
+        splunk-token: "<YOUR_HEC_TOKEN>"
+        splunk-insecureskipverify: "true"
+        splunk-format: "json"
+        tag: "capture-service"
     depends_on:
       parser-service:
         condition: service_started
