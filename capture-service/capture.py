@@ -138,7 +138,7 @@ def stop_sniffing():
     return jsonify({"status": "sniffing_stopped"})
 
 
-@app.route("/api/status", methods=["GET"])
+@app.route("/status", methods=["GET"])
 def status():
     """✅ New endpoint to return sniffing status + interface"""
     is_running = sniff_thread and sniff_thread.is_alive()
@@ -152,7 +152,7 @@ def status():
 def root():
     return jsonify({
         "status": "capture-service running",
-        "available_endpoints": ["/health", "/start_sniffing", "/stop_sniffing", "/api/status"]
+        "available_endpoints": ["/health", "/start_sniffing", "/stop_sniffing", "/status"]
     })
 
 
