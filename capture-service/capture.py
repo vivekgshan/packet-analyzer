@@ -12,6 +12,7 @@ PARSER_URL = "http://127.0.0.1:5001/parse"
 
 sniff_thread = None
 stop_flag = False
+current_iface = None
 
 # For rate-limited logging
 packet_count = 0
@@ -68,7 +69,7 @@ def get_default_iface():
 
 def run_sniffer(mode="LIVE", pcap_file=None):
     """Run live or PCAP sniffing"""
-    global stop_flag, packet_count, last_log_time
+    global stop_flag, packet_count, last_log_time, current_iface
     stop_flag = False
     packet_count = 0
     last_log_time = time.time()
@@ -76,6 +77,7 @@ def run_sniffer(mode="LIVE", pcap_file=None):
 
     if mode.upper() == "LIVE":
         iface = get_default_iface()
+        current_iface = iface   # ✅ save detected iface
         logging.info(f"🔴 Started sniffing on {iface}...")
         sniff(
             iface=iface,
@@ -108,17 +110,18 @@ def run_sniffer(mode="LIVE", pcap_file=None):
 
 @app.route("/start_sniffing", methods=["POST"])
 def start_sniffing():
-    global sniff_thread, stop_flag
+    global sniff_thread, stop_flag, current_iface
     if sniff_thread and sniff_thread.is_alive():
         return jsonify({"status": "already_running"}), 400
 
     mode = request.args.get("mode", "LIVE")
     pcap_file = request.args.get("file")
-    iface = get_default_iface()
 
     sniff_thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file))
     sniff_thread.start()
-    return jsonify({"status": f"sniffing_started_{mode}", "pcap": pcap_file, "iface": iface})
+
+    # ✅ return the same iface actually being used
+    return jsonify({"status": f"sniffing_started_{mode}", "pcap": pcap_file, "iface": current_iface})
 
 
 @app.route("/stop_sniffing", methods=["POST"])
@@ -129,11 +132,21 @@ def stop_sniffing():
     return jsonify({"status": "sniffing_stopped"})
 
 
+@app.route("/status", methods=["GET"])
+def status():
+    """✅ New endpoint to return sniffing status + interface"""
+    is_running = sniff_thread and sniff_thread.is_alive()
+    return jsonify({
+        "running": is_running,
+        "iface": current_iface if is_running else None
+    })
+
+
 @app.route("/", methods=["GET"])
 def root():
     return jsonify({
         "status": "capture-service running",
-        "available_endpoints": ["/health", "/start_sniffing", "/stop_sniffing"]
+        "available_endpoints": ["/health", "/start_sniffing", "/stop_sniffing", "/status"]
     })
 
 
