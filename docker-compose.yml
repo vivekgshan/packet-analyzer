@@ -1,10 +1,29 @@
-version: "3.9"
-
 services:
   # ----------------------
   # Splunk Enterprise
   # ----------------------
+  splunk:
+    image: splunk/splunk:latest
+    container_name: splunk
+    environment:
+      SPLUNK_START_ARGS: "--accept-license"
+      SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
+      SPLUNK_PASSWORD: "changeme123"
+    ports:
+      - "8000:8000"   # UI
+      - "8088:8088"   # HEC
+    networks:
+      - packet-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/services/collector/health"]
+      interval: 15s
+      retries: 20
+      start_period: 60s
+      timeout: 5s
 
+  # ----------------------
+  # PostgreSQL
+  # ----------------------
   db:
     image: postgres:15
     container_name: db
@@ -22,6 +41,9 @@ services:
       timeout: 5s
       retries: 10
 
+  # ----------------------
+  # pgAdmin
+  # ----------------------
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin
@@ -36,6 +58,9 @@ services:
       db:
         condition: service_healthy
 
+  # ----------------------
+  # Microservices
+  # ----------------------
   persistor-service:
     image: ${DOCKERHUB_USER}/persistor-service:latest
     container_name: persistor-service
@@ -50,11 +75,13 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "f9cf68d8-77bd-4e17-8353-a076273c9870"
+        splunk-token: "<YOUR_HEC_TOKEN>"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "persistor-service"
     depends_on:
+      splunk:
+        condition: service_healthy
       db:
         condition: service_healthy
 
@@ -72,11 +99,13 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "f9cf68d8-77bd-4e17-8353-a076273c9870"
+        splunk-token: "<YOUR_HEC_TOKEN>"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "parser-service"
     depends_on:
+      splunk:
+        condition: service_healthy
       persistor-service:
         condition: service_started
 
@@ -94,11 +123,13 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "f9cf68d8-77bd-4e17-8353-a076273c9870"
+        splunk-token: "<YOUR_HEC_TOKEN>"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "analyzer-service"
     depends_on:
+      splunk:
+        condition: service_healthy
       parser-service:
         condition: service_started
 
@@ -115,11 +146,13 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "f9cf68d8-77bd-4e17-8353-a076273c9870"
+        splunk-token: "<YOUR_HEC_TOKEN>"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "ui-service"
     depends_on:
+      splunk:
+        condition: service_healthy
       analyzer-service:
         condition: service_started
     extra_hosts:
@@ -130,7 +163,7 @@ services:
     container_name: capture-service
     environment:
       SERVICE_PORT: 5004
-      IFACE: ens5   # match your EC2 NIC
+      IFACE: ens5
     network_mode: "host"
     cap_add:
       - NET_ADMIN
@@ -139,12 +172,14 @@ services:
     logging:
       driver: splunk
       options:
-        splunk-url: "http://localhost:8088"   # uses host mode, so localhost works
-        splunk-token: "f9cf68d8-77bd-4e17-8353-a076273c9870"
+        splunk-url: "http://localhost:8088"
+        splunk-token: "<YOUR_HEC_TOKEN>"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "capture-service"
     depends_on:
+      splunk:
+        condition: service_healthy
       parser-service:
         condition: service_started
 
