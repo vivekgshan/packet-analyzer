@@ -159,20 +159,28 @@ function refreshSummary() {
 
 // Sniffing Controls
 function startSniffing() {
-  fetch("/api/start_sniffing", { method: "POST" })
-    .then(res => res.json())
-    .then(() => {
-      document.getElementById("sniff-status").innerText = "✅ Sniffing Started";
-      document.getElementById("sniff-status").className = "status-running";
-    });
+    fetch("/api/start_sniffing", { method: "POST" })
+        .then(res => res.json())
+        .then(data => {
+            let iface = data.iface ? ` (Interface: ${data.iface})` : "";
+            document.getElementById("sniff-status").innerText = "✅ Sniffing Started" + iface;
+            document.getElementById("sniff-status").className = "status-running";
+        })
+        .catch(err => {
+            document.getElementById("sniff-status").innerText = "❌ Error starting sniffing";
+        });
 }
+
 function stopSniffing() {
-  fetch("/api/stop_sniffing", { method: "POST" })
-    .then(res => res.json())
-    .then(() => {
-      document.getElementById("sniff-status").innerText = "🛑 Sniffing Stopped";
-      document.getElementById("sniff-status").className = "status-stopped";
-    });
+    fetch("/api/stop_sniffing", { method: "POST" })
+        .then(res => res.json())
+        .then(() => {
+            document.getElementById("sniff-status").innerText = "🛑 Sniffing Stopped";
+            document.getElementById("sniff-status").className = "status-stopped";
+        })
+        .catch(err => {
+            document.getElementById("sniff-status").innerText = "❌ Error stopping sniffing";
+        });
 }
 
 // DataTable + auto-refresh
