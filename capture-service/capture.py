@@ -116,14 +116,14 @@ def run_sniffer(mode="LIVE", pcap_file=None):
     time.sleep(2)
 
     if mode.upper() == "LIVE":
-        iface = get_default_iface()
-        current_iface = iface   # ✅ save detected iface
+        iface = current_iface or get_default_iface()
+        current_iface = iface
         logging.info(f"🔴 Started sniffing on {iface}...")
         sniff(
             iface=iface,
             prn=lambda pkt: send_packet(pkt, source="LIVE"),
             store=False,
-            stop_filter=lambda pkt: stop_flag      # ✅ stop sniffing gracefully
+            stop_filter=lambda pkt: stop_flag  #stop sniffing garcefully
         )
         logging.info("🛑 Sniffing stopped (LIVE mode).")
 
@@ -156,17 +156,16 @@ def start_sniffing():
 
     mode = request.args.get("mode", "LIVE")
     pcap_file = request.args.get("file")
+    iface = request.args.get("iface")  # 👈 from UI dropdown
 
-     # Detect iface before starting thread
     if mode.upper() == "LIVE":
-        current_iface = get_default_iface()
+        current_iface = iface if iface else get_default_iface()
     else:
         current_iface = None
-        
+
     sniff_thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file))
     sniff_thread.start()
 
-    # ✅ return the same iface actually being used
     return jsonify({"status": f"sniffing_started_{mode}", "pcap": pcap_file, "iface": current_iface})
 
 
