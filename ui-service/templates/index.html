@@ -168,13 +168,27 @@ function updateStatus() {
 }
 
 function startSniffing() {
-  let iface = document.getElementById("iface-select").value;
-  let url = "/api/start_sniffing";
-  if (iface) url += `?iface=${iface}`;
-  fetch(url, { method: "POST" })
-    .then(() => updateStatus())
-    .catch(() => { document.getElementById("sniff-status").innerText = "❌ Error starting sniffing"; });
+    let iface = document.getElementById("iface-select").value;
+    let url = "/api/start_sniffing";
+    if (iface) url += `?iface=${iface}`;
+
+    fetch(url, { method: "POST" })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(result => {
+          if (!result.ok) {
+              document.getElementById("sniff-status").innerText =
+                "❌ " + (result.data.error || "Failed to start sniffing");
+              document.getElementById("sniff-status").className = "status-stopped";
+          } else {
+              updateStatus();
+          }
+      })
+      .catch(() => {
+          document.getElementById("sniff-status").innerText = "❌ Error starting sniffing";
+          document.getElementById("sniff-status").className = "status-stopped";
+      });
 }
+
 
 function stopSniffing() {
   fetch("/api/stop_sniffing", { method: "POST" })
