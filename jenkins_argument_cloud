@@ -112,14 +112,14 @@ pipeline {
                 sshagent(['azure-ssh-key']) {
                     sh """
                         echo "Deploying to VM: ${params.VM_USER}@${params.VM_IP}..."
-                        ssh -o StrictHostKeyChecking=no \${params.VM_USER}@${params.VM_IP} '
+                        ssh -o StrictHostKeyChecking=no "${params.VM_USER}@${params.VM_IP}" bash -s << 'EOF'
                             set -e
                             # Create deployment directory if it does not exist
-                            mkdir -p \${params.DEPLOY_DIR}
-                            cd \${params.DEPLOY_DIR} || exit 1
+                            mkdir -p ${params.DEPLOY_DIR}
+                            cd ${params.DEPLOY_DIR} || exit 1
 
                             # Clone repo if directory is empty
-                            if [ -z "$(ls -A ${params.DEPLOY_DIR})" ]; then
+                            if [ -z "\$(ls -A ${params.DEPLOY_DIR})" ]; then
                                 git clone ${params.GIT_URL} .
                             fi
 
@@ -130,7 +130,7 @@ pipeline {
                             export DOCKERHUB_USER=${params.DOCKERHUB_USER}
                             docker-compose pull
                             docker-compose up -d --remove-orphans
-                        '
+        EOF
                     """
                 }
             }
