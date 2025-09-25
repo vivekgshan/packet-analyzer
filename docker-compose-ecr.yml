@@ -1,0 +1,116 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:14
+    container_name: packet-db
+    restart: always
+    environment:
+      POSTGRES_DB: packetdb
+      POSTGRES_USER: packetuser
+      POSTGRES_PASSWORD: packetpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
+    networks:
+      - packet-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U packetuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@packet.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - packet-net
+
+  persistor-service:
+    image: 639799575784.dkr.ecr.ca-central-1.amazonaws.com/packet-analyzer/persistor-service:latest
+    container_name: persistor-service
+    environment:
+      SERVICE_PORT: 5002
+      DATABASE_URL: "postgresql://packetuser:packetpass@db:5432/packetdb"
+    ports:
+      - "5002:5002"
+    networks:
+      - packet-net
+    depends_on:
+      db:
+        condition: service_healthy
+
+  parser-service:
+    image: 639799575784.dkr.ecr.ca-central-1.amazonaws.com/packet-analyzer/parser-service:latest
+    container_name: parser-service
+    environment:
+      SERVICE_PORT: 5001
+      DATABASE_URL: "postgresql://packetuser:packetpass@db:5432/packetdb"
+    ports:
+      - "5001:5001"
+    networks:
+      - packet-net
+    depends_on:
+      persistor-service:
+        condition: service_started
+
+  analyzer-service:
+    image: 639799575784.dkr.ecr.ca-central-1.amazonaws.com/packet-analyzer/analyzer-service:latest
+    container_name: analyzer-service
+    environment:
+      SERVICE_PORT: 5003
+      DATABASE_URL: "postgresql://packetuser:packetpass@db:5432/packetdb"
+    ports:
+      - "5003:5003"
+    networks:
+      - packet-net
+    depends_on:
+      parser-service:
+        condition: service_started
+
+  ui-service:
+    image: 639799575784.dkr.ecr.ca-central-1.amazonaws.com/packet-analyzer/ui-service:latest
+    container_name: ui-service
+    environment:
+      SERVICE_PORT: 5000
+    ports:
+      - "5000:5000"
+    networks:
+      - packet-net
+    depends_on:
+      analyzer-service:
+        condition: service_started
+
+  capture-service:
+    image: 639799575784.dkr.ecr.ca-central-1.amazonaws.com/packet-analyzer/capture-service:latest
+    container_name: capture-service
+    environment:
+      SERVICE_PORT: 5004
+      IFACE: enp39s0   # adjust to your EC2 NIC
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: always
+    depends_on:
+      parser-service:
+        condition: service_started
+
+volumes:
+  db_data:
+
+networks:
+  packet-net:
+    driver: bridge
