@@ -13,6 +13,7 @@ PARSER_URL = "http://127.0.0.1:5001/parse"
 sniff_thread = None
 stop_flag = False
 current_iface = None
+last_error = None 
 
 # For rate-limited logging
 packet_count = 0
@@ -149,7 +150,9 @@ def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
 
 @app.route("/start_sniffing", methods=["POST"])
 def start_sniffing():
-    global sniff_thread, stop_flag, current_iface
+    global sniff_thread, stop_flag, current_iface, last_error
+    last_error = None  # reset old error
+    
     if sniff_thread and sniff_thread.is_alive():
         return jsonify({"status": "already_running"}), 400
 
@@ -162,8 +165,9 @@ def start_sniffing():
         available = list(psutil.net_if_addrs().keys())
         if iface not in available:
             logging.error(f"❌ Requested interface '{iface}' not found. Available: {available}")
+            last_error = f"Interface '{iface}' not found"   # ✅ set error
             return jsonify({
-                "error": f"Interface '{iface}' not found",
+                "error": last_error,
                 "available": available
             }), 400
 
@@ -178,9 +182,9 @@ def start_sniffing():
             "iface": current_iface
         })
     except Exception as e:
+        last_error = str(e)   # ✅ capture exception as error
         logging.error(f"❌ Failed to start sniffer: {e}")
-        return jsonify({"error": str(e)}), 500
-
+        return jsonify({"error": last_error}), 500
 
 
 @app.route("/stop_sniffing", methods=["POST"])
@@ -213,11 +217,13 @@ def list_interfaces():
 
 @app.route("/status", methods=["GET"])
 def status():
-    """Return sniffing status + interface"""
-    is_running = sniff_thread and sniff_thread.is_alive() and not stop_flag
+    """Return sniffing status + interface or last error"""
+    global last_error
+    is_running = sniff_thread and sniff_thread.is_alive()
     return jsonify({
         "running": is_running,
-        "iface": current_iface if is_running else None
+        "iface": current_iface if is_running else None,
+        "error": last_error   # ✅ include error if present
     })
 
 
