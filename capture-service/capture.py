@@ -155,14 +155,31 @@ def start_sniffing():
 
     mode = request.args.get("mode", "LIVE")
     pcap_file = request.args.get("file")
-    iface = request.args.get("iface")  # may be None
+    iface = request.args.get("iface")
 
-    # Set current_iface now so UI gets it back immediately
+    # validate iface if provided
+    if iface:
+        available = list(psutil.net_if_addrs().keys())
+        if iface not in available:
+            logging.error(f"❌ Requested interface '{iface}' not found. Available: {available}")
+            return jsonify({
+                "error": f"Interface '{iface}' not found",
+                "available": available
+            }), 400
+
     current_iface = iface or (get_default_iface() if mode.upper() == "LIVE" else None)
 
-    sniff_thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
-    sniff_thread.start()
-    return jsonify({"status": f"sniffing_started_{mode}", "pcap": pcap_file, "iface": current_iface})
+    try:
+        sniff_thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
+        sniff_thread.start()
+        return jsonify({
+            "status": f"sniffing_started_{mode}",
+            "pcap": pcap_file,
+            "iface": current_iface
+        })
+    except Exception as e:
+        logging.error(f"❌ Failed to start sniffer: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -174,11 +191,11 @@ def stop_sniffing():
     return jsonify({"status": "sniffing_stopped"})
 
 
-# NEW: enumerate interfaces for the UI
+									  
 @app.route("/interfaces", methods=["GET"])
 def list_interfaces():
     names = list(psutil.net_if_addrs().keys())
-    # filter out most container/virtual links in the “suggested” set
+	# filter out most container/virtual links in the “suggested” se																	
     hide = ("docker", "br-", "veth", "vcan", "tun", "tap", "cni", "virbr", "wg")
     suggested = [n for n in names if not n.startswith(hide)]
     curated = [
@@ -194,12 +211,14 @@ def list_interfaces():
 
 @app.route("/status", methods=["GET"])
 def status():
-    """✅ New endpoint to return sniffing status + interface"""
+	"""✅ New endpoint to return sniffing status + interface"""															
     is_running = sniff_thread and sniff_thread.is_alive()
     return jsonify({
         "running": is_running,
         "iface": current_iface if is_running else None
     })
+
+
 
 
 @app.route("/", methods=["GET"])
