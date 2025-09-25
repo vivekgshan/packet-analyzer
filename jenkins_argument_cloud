@@ -112,7 +112,7 @@ pipeline {
                 sshagent(['azure-ssh-key']) {
                     sh """
                         echo "Deploying to VM: ${params.VM_USER}@${params.VM_IP}..."
-                        ssh -o StrictHostKeyChecking=no ${params.VM_USER}@${params.VM_IP} '
+                        ssh -o StrictHostKeyChecking=no \${params.VM_USER}@${params.VM_IP} '
                             set -e
                             # Create deployment directory if it does not exist
                             mkdir -p \${params.DEPLOY_DIR}
