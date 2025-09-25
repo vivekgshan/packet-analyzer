@@ -78,6 +78,18 @@
     </div>
   </div>
 
+  <!-- Interaces sniffing controls dropdown -->
+  <div class="card p-3">
+  <h5>Sniffing Controls</h5>
+  <select id="iface-select" class="form-select mb-2">
+    <option value="">Auto-detect (default)</option>
+  </select>
+  <button class="btn btn-success" onclick="startSniffing()">Start Sniffing</button>
+  <button class="btn btn-danger" onclick="stopSniffing()">Stop Sniffing</button>
+  <span id="sniff-status" class="ms-3 status-idle">Idle</span>
+  </div>
+
+  
   <!-- Packet Table -->
   <div class="card p-3">
     <h5>
@@ -179,12 +191,17 @@ function updateStatus() {
 
 // Sniffing Controls
 function startSniffing() {
-    fetch("/api/start_sniffing", { method: "POST" })
+    let iface = document.getElementById("iface-select").value;
+    let url = "/api/start_sniffing";
+    if (iface) url += `?iface=${iface}`;
+
+    fetch(url, { method: "POST" })
         .then(() => updateStatus())
-        .catch(err => {
+        .catch(() => {
             document.getElementById("sniff-status").innerText = "❌ Error starting sniffing";
         });
 }
+
 
 function stopSniffing() {
     fetch("/api/stop_sniffing", { method: "POST" })
@@ -193,6 +210,21 @@ function stopSniffing() {
             document.getElementById("sniff-status").innerText = "❌ Error stopping sniffing";
         });
 }
+
+function loadInterfaces() {
+  fetch("/api/interfaces")
+    .then(res => res.json())
+    .then(data => {
+      let select = document.getElementById("iface-select");
+      data.interfaces.forEach(iface => {
+        let opt = document.createElement("option");
+        opt.value = iface;
+        opt.innerText = iface;
+        select.appendChild(opt);
+      });
+    });
+}
+  
 
 // DataTable + auto-refresh
 $(document).ready(function () {
@@ -209,6 +241,7 @@ $(document).ready(function () {
 
   // run once immediately
   updateStatus();
+  loadInterfaces();   // 👈 load interfaces on page load
 });
 </script>
 </body>
