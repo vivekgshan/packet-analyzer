@@ -195,30 +195,26 @@ def stop_sniffing():
 @app.route("/interfaces", methods=["GET"])
 def list_interfaces():
     names = list(psutil.net_if_addrs().keys())
-	# filter out most container/virtual links in the “suggested” se																	
     hide = ("docker", "br-", "veth", "vcan", "tun", "tap", "cni", "virbr", "wg")
     suggested = [n for n in names if not n.startswith(hide)]
     curated = [
-        "eth0","eth1","ens3","ens4","ens5","ens6","ens7","ens8",
-        "enp0s3","enp0s8","enp1s0","enp2s0","enp3s0","enp39s0",
-        "eno1","eno2","bond0","en0","en1","awdl0","bridge0",
-        "wlan0","wlp1s0","wlp2s0","wlp3s0","wlp4s0","lo"
+        "eth0", "eth1", "ens3", "ens4", "ens5", "ens6", "ens7", "ens8",
+        "enp0s3", "enp0s8", "enp1s0", "enp2s0", "enp3s0", "enp39s0",
+        "eno1", "eno2", "bond0", "en0", "en1", "awdl0", "bridge0",
+        "wlan0", "wlp1s0", "wlp2s0", "wlp3s0", "wlp4s0", "lo"
     ]
     merged = sorted(dict.fromkeys(curated + suggested + names))
     return jsonify({"interfaces": merged})
 
 
-
 @app.route("/status", methods=["GET"])
 def status():
-	"""✅ New endpoint to return sniffing status + interface"""															
+    """Return sniffing status + interface"""
     is_running = sniff_thread and sniff_thread.is_alive()
     return jsonify({
         "running": is_running,
         "iface": current_iface if is_running else None
     })
-
-
 
 
 @app.route("/", methods=["GET"])
