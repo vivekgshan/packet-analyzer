@@ -182,16 +182,52 @@ function stopSniffing() {
     .catch(() => { document.getElementById("sniff-status").innerText = "❌ Error stopping sniffing"; });
 }
 
+const FALLBACK_IFACES = [
+  // Linux (AWS/GCP/Azure/on-prem)
+  "eth0","eth1","ens3","ens4","ens5","ens6","ens7","ens8",
+  "enp0s3","enp0s8","enp1s0","enp2s0","enp3s0","enp39s0",
+  "eno1","eno2","bond0",
+  // macOS
+  "en0","en1","awdl0","bridge0",
+  // laptops (Wi-Fi)
+  "wlan0","wlp1s0","wlp2s0","wlp3s0","wlp4s0",
+  // fallback
+  "lo"
+];	
+	
+// Fills the dropdown from /api/interfaces; falls back to a curated list if needed
 function loadInterfaces() {
+  const select = document.getElementById("iface-select");
+  // keep only the first option ("Auto-detect")
+  select.length = 1;
+
   fetch("/api/interfaces")
-    .then(res => res.json())
+    .then(r => r.json())
     .then(data => {
-      let select = document.getElementById("iface-select");
-      data.interfaces.forEach(iface => {
-        let opt = document.createElement("option");
-        opt.value = iface;
-        opt.innerText = iface;
-        select.appendChild(opt);
+      const list = Array.isArray(data) ? data : (data.interfaces || []);
+      const finalList = (list.length ? list : FALLBACK_IFACES);
+      const seen = new Set();
+      finalList.forEach(name => {
+        if (!seen.has(name)) {
+          seen.add(name);
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          select.appendChild(opt);
+        }
+      });
+    })
+    .catch(() => {
+      // hard fallback: use curated list
+      const seen = new Set();
+      FALLBACK_IFACES.forEach(name => {
+        if (!seen.has(name)) {
+          seen.add(name);
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          document.getElementById("iface-select").appendChild(opt);
+        }
       });
     });
 }
