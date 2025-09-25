@@ -41,21 +41,16 @@ def to_ist(value):
 @app.route("/api/start_sniffing", methods=["POST"])
 def start_sniffing():
     try:
-        iface = request.args.get("iface")  # ✅ take iface from UI request
-        mode = request.args.get("mode", "LIVE")
-
-        logging.info(f"📡 Forwarding start_sniffing request to capture-service... iface={iface}")
-
-        params = {"mode": mode}
-        if iface:  # only pass iface if user selected
-            params["iface"] = iface
-
-        res = requests.post(f"{CAPTURE_URL}/start_sniffing", params=params)
+        iface = request.args.get("iface")  # may be None/empty
+        url = f"{CAPTURE_URL}/start_sniffing"
+        if iface:
+            url += f"?iface={iface}"
+        res = requests.post(url, timeout=5)
         logging.info(f"✅ Capture-service response: {res.json()}")
         return jsonify({"status": "started", "response": res.json()})
     except Exception as e:
-        logging.error(f"❌ Failed to start sniffing: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 
 @app.route("/api/stop_sniffing", methods=["POST"])
@@ -79,6 +74,23 @@ def api_status():
     except Exception as e:
         logging.error(f"❌ Failed to get status: {e}")
         return jsonify({"error": str(e)}), 500
+# TOP: imports stay the same
+
+# Add this endpoint to provide interface list to the UI
+@app.route("/api/interfaces", methods=["GET"])
+def api_interfaces():
+    try:
+        # ask capture-service to enumerate (no new deps in UI image)
+        r = requests.get(f"{CAPTURE_URL}/interfaces", timeout=3)
+        return jsonify(r.json())
+    except Exception:
+        # safe fallback if capture not reachable
+        return jsonify({"interfaces": [
+            "eth0","eth1","ens3","ens4","ens5","ens6","ens7","ens8",
+            "enp0s3","enp0s8","enp1s0","enp2s0","enp3s0","enp39s0",
+            "eno1","eno2","bond0","en0","en1","awdl0","bridge0",
+            "wlan0","wlp1s0","wlp2s0","wlp3s0","wlp4s0","lo"
+        ]})
 
 
 # -------------------------------------------------------------------
