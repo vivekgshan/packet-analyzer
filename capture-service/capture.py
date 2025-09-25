@@ -178,6 +178,13 @@ def stop_sniffing():
     return jsonify({"status": "sniffing_stopped"})
 
 
+@app.route("/interfaces", methods=["GET"])
+def interfaces():
+    """Return list of available interfaces"""
+    available = list(psutil.net_if_addrs().keys())
+    return jsonify({"interfaces": available})
+
+
 @app.route("/status", methods=["GET"])
 def status():
     """✅ New endpoint to return sniffing status + interface"""
