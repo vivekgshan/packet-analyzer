@@ -107,8 +107,7 @@ def get_default_iface():
 
 
 
-def run_sniffer(mode="LIVE", pcap_file=None):
-    """Run live or PCAP sniffing"""
+def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
     global stop_flag, packet_count, last_log_time, current_iface
     stop_flag = False
     packet_count = 0
@@ -116,14 +115,14 @@ def run_sniffer(mode="LIVE", pcap_file=None):
     time.sleep(2)
 
     if mode.upper() == "LIVE":
-        iface = current_iface or get_default_iface()
+        iface = iface_override or get_default_iface()
         current_iface = iface
         logging.info(f"🔴 Started sniffing on {iface}...")
         sniff(
             iface=iface,
             prn=lambda pkt: send_packet(pkt, source="LIVE"),
             store=False,
-            stop_filter=lambda pkt: stop_flag  #stop sniffing garcefully
+            stop_filter=lambda pkt: stop_flag
         )
         logging.info("🛑 Sniffing stopped (LIVE mode).")
 
@@ -156,17 +155,15 @@ def start_sniffing():
 
     mode = request.args.get("mode", "LIVE")
     pcap_file = request.args.get("file")
-    iface = request.args.get("iface")  # 👈 from UI dropdown
+    iface = request.args.get("iface")  # may be None
 
-    if mode.upper() == "LIVE":
-        current_iface = iface if iface else get_default_iface()
-    else:
-        current_iface = None
+    # Set current_iface now so UI gets it back immediately
+    current_iface = iface or (get_default_iface() if mode.upper() == "LIVE" else None)
 
-    sniff_thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file))
+    sniff_thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
     sniff_thread.start()
-
     return jsonify({"status": f"sniffing_started_{mode}", "pcap": pcap_file, "iface": current_iface})
+
 
 
 @app.route("/stop_sniffing", methods=["POST"])
@@ -177,11 +174,22 @@ def stop_sniffing():
     return jsonify({"status": "sniffing_stopped"})
 
 
+# NEW: enumerate interfaces for the UI
 @app.route("/interfaces", methods=["GET"])
-def interfaces():
-    """Return list of available interfaces"""
-    available = list(psutil.net_if_addrs().keys())
-    return jsonify({"interfaces": available})
+def list_interfaces():
+    names = list(psutil.net_if_addrs().keys())
+    # filter out most container/virtual links in the “suggested” set
+    hide = ("docker", "br-", "veth", "vcan", "tun", "tap", "cni", "virbr", "wg")
+    suggested = [n for n in names if not n.startswith(hide)]
+    curated = [
+        "eth0","eth1","ens3","ens4","ens5","ens6","ens7","ens8",
+        "enp0s3","enp0s8","enp1s0","enp2s0","enp3s0","enp39s0",
+        "eno1","eno2","bond0","en0","en1","awdl0","bridge0",
+        "wlan0","wlp1s0","wlp2s0","wlp3s0","wlp4s0","lo"
+    ]
+    merged = sorted(dict.fromkeys(curated + suggested + names))
+    return jsonify({"interfaces": merged})
+
 
 
 @app.route("/status", methods=["GET"])
