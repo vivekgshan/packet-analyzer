@@ -149,23 +149,27 @@ function refreshSummary() {
 }
 
 function updateStatus() {
-  fetch("/api/status")
-    .then(res => res.json())
-    .then(data => {
-      if (data.running) {
-        let iface = data.iface ? ` (Interface: ${data.iface})` : "";
-        document.getElementById("sniff-status").innerText = "✅ Sniffing Started" + iface;
-        document.getElementById("sniff-status").className = "status-running";
-      } else {
-        document.getElementById("sniff-status").innerText = "🛑 Sniffing Stopped";
-        document.getElementById("sniff-status").className = "status-stopped";
-      }
-    })
-    .catch(() => {
-      document.getElementById("sniff-status").innerText = "⚠️ Status unavailable";
-      document.getElementById("sniff-status").className = "status-idle";
-    });
+    fetch("/api/status")
+      .then(res => res.json())
+      .then(data => {
+          if (data.error) {
+              document.getElementById("sniff-status").innerText = "❌ " + data.error;
+              document.getElementById("sniff-status").className = "status-stopped";
+          } else if (data.running) {
+              let iface = data.iface ? ` (Interface: ${data.iface})` : "";
+              document.getElementById("sniff-status").innerText = "✅ Sniffing Started" + iface;
+              document.getElementById("sniff-status").className = "status-running";
+          } else {
+              document.getElementById("sniff-status").innerText = "🛑 Sniffing Stopped";
+              document.getElementById("sniff-status").className = "status-stopped";
+          }
+      })
+      .catch(() => {
+          document.getElementById("sniff-status").innerText = "⚠️ Status unavailable";
+          document.getElementById("sniff-status").className = "status-idle";
+      });
 }
+
 
 function startSniffing() {
     let iface = document.getElementById("iface-select").value;
