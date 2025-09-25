@@ -15,23 +15,21 @@
     .status-idle { color: gray; font-weight: bold; }
     .status-running { color: green; font-weight: bold; }
     .status-stopped { color: red; font-weight: bold; }
-    /* 🎯 Smaller chart size */
-    #protocolChart {
-      max-width: 200px;
-      max-height: 200px;
-      margin: 0 auto;
-    }
+    #protocolChart { max-width: 200px; max-height: 200px; margin: 0 auto; }
   </style>
 </head>
 <body>
 <div class="container-fluid mt-3">
   <h3 class="mb-3">📡 Packet Analyzer</h3>
 
-  <!-- Controls -->
+  <!-- Controls (merged) -->
   <div class="row">
     <div class="col-md-6">
       <div class="card p-3">
         <h5>Sniffing Controls</h5>
+        <select id="iface-select" class="form-select mb-2">
+          <option value="">Auto-detect (default)</option>
+        </select>
         <button class="btn btn-success" onclick="startSniffing()">Start Sniffing</button>
         <button class="btn btn-danger" onclick="stopSniffing()">Stop Sniffing</button>
         <span id="sniff-status" class="ms-3 status-idle">Idle</span>
@@ -78,18 +76,6 @@
     </div>
   </div>
 
-  <!-- Interaces sniffing controls dropdown -->
-  <div class="card p-3">
-  <h5>Sniffing Controls</h5>
-  <select id="iface-select" class="form-select mb-2">
-    <option value="">Auto-detect (default)</option>
-  </select>
-  <button class="btn btn-success" onclick="startSniffing()">Start Sniffing</button>
-  <button class="btn btn-danger" onclick="stopSniffing()">Stop Sniffing</button>
-  <span id="sniff-status" class="ms-3 status-idle">Idle</span>
-  </div>
-
-  
   <!-- Packet Table -->
   <div class="card p-3">
     <h5>
@@ -133,12 +119,10 @@
 <script>
 let chart;
 
-// Refresh summary + chart
 function refreshSummary() {
   fetch("/api/summary")
     .then(res => res.json())
     .then(data => {
-      // Update list
       let list = document.getElementById("protocol-list");
       list.innerHTML = "";
       for (const [proto, counts] of Object.entries(data)) {
@@ -152,8 +136,6 @@ function refreshSummary() {
         }
         list.appendChild(li);
       }
-
-      // Update chart
       let labels = Object.keys(data);
       let values = labels.map(p => Object.values(data[p]).reduce((a,b)=>a+b,0));
       let colors = ["#7E57C2","#42A5F5","#66BB6A","#FFA726","#EF5350","#26C6DA","#AB47BC"];
@@ -161,54 +143,43 @@ function refreshSummary() {
       chart = new Chart(document.getElementById("protocolChart"), {
         type: "doughnut",
         data: { labels, datasets: [{ data: values, backgroundColor: colors }] },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false
-        }
+        options: { responsive: true, maintainAspectRatio: false }
       });
     });
 }
 
-// ✅ Poll status API and update status line
 function updateStatus() {
-    fetch("/api/status")
-      .then(res => res.json())
-      .then(data => {
-          if (data.running) {
-              let iface = data.iface ? ` (Interface: ${data.iface})` : "";
-              document.getElementById("sniff-status").innerText = "✅ Sniffing Started" + iface;
-              document.getElementById("sniff-status").className = "status-running";
-          } else {
-              document.getElementById("sniff-status").innerText = "🛑 Sniffing Stopped";
-              document.getElementById("sniff-status").className = "status-stopped";
-          }
-      })
-      .catch(() => {
-          document.getElementById("sniff-status").innerText = "⚠️ Status unavailable";
-          document.getElementById("sniff-status").className = "status-idle";
-      });
+  fetch("/api/status")
+    .then(res => res.json())
+    .then(data => {
+      if (data.running) {
+        let iface = data.iface ? ` (Interface: ${data.iface})` : "";
+        document.getElementById("sniff-status").innerText = "✅ Sniffing Started" + iface;
+        document.getElementById("sniff-status").className = "status-running";
+      } else {
+        document.getElementById("sniff-status").innerText = "🛑 Sniffing Stopped";
+        document.getElementById("sniff-status").className = "status-stopped";
+      }
+    })
+    .catch(() => {
+      document.getElementById("sniff-status").innerText = "⚠️ Status unavailable";
+      document.getElementById("sniff-status").className = "status-idle";
+    });
 }
 
-// Sniffing Controls
 function startSniffing() {
-    let iface = document.getElementById("iface-select").value;
-    let url = "/api/start_sniffing";
-    if (iface) url += `?iface=${iface}`;
-
-    fetch(url, { method: "POST" })
-        .then(() => updateStatus())
-        .catch(() => {
-            document.getElementById("sniff-status").innerText = "❌ Error starting sniffing";
-        });
+  let iface = document.getElementById("iface-select").value;
+  let url = "/api/start_sniffing";
+  if (iface) url += `?iface=${iface}`;
+  fetch(url, { method: "POST" })
+    .then(() => updateStatus())
+    .catch(() => { document.getElementById("sniff-status").innerText = "❌ Error starting sniffing"; });
 }
-
 
 function stopSniffing() {
-    fetch("/api/stop_sniffing", { method: "POST" })
-        .then(() => updateStatus())
-        .catch(err => {
-            document.getElementById("sniff-status").innerText = "❌ Error stopping sniffing";
-        });
+  fetch("/api/stop_sniffing", { method: "POST" })
+    .then(() => updateStatus())
+    .catch(() => { document.getElementById("sniff-status").innerText = "❌ Error stopping sniffing"; });
 }
 
 function loadInterfaces() {
@@ -224,24 +195,16 @@ function loadInterfaces() {
       });
     });
 }
-  
 
-// DataTable + auto-refresh
 $(document).ready(function () {
-  $('#packetTable').DataTable({
-    pageLength: 25,
-    order: [[0, "desc"]]
-  });
-
-  // auto refresh every 2s
+  $('#packetTable').DataTable({ pageLength: 25, order: [[0, "desc"]] });
+	// auto refresh every 2s					  
   setInterval(refreshSummary, 2000);
-
-  // auto refresh status every 2s
+	// auto refresh status every 2s							 
   setInterval(updateStatus, 2000);
-
-  // run once immediately
+	// run once immediately					 
   updateStatus();
-  loadInterfaces();   // 👈 load interfaces on page load
+  loadInterfaces();  // 👈 load interfaces on page load
 });
 </script>
 </body>
