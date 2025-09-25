@@ -2,11 +2,11 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'DOCKERHUB_USER', defaultValue: 'vivekgshan', description: 'Docker Hub username')
+        string(name: 'DOCKERHUB_USER', defaultValue: 'suhanson', description: 'Docker Hub username')
         choice(name: 'STOP_CONTAINERS', choices: ['yes', 'no'], description: 'Stop and remove running containers?')
         choice(name: 'REMOVE_IMAGES', choices: ['yes', 'no'], description: 'Remove Docker images?')
         string(name: 'GIT_URL', defaultValue: 'https://github.com/vivekgshan/packet-analyzer.git', description: 'Git repository URL')
-        string(name: 'GIT_BRANCH', defaultValue: 'Docker-features-v4', description: 'Git branch to checkout')
+        string(name: 'GIT_BRANCH', defaultValue: 'Docker-features-pluto', description: 'Git branch to checkout')
         string(name: 'VM_USER', description: 'VM username')
         string(name: 'VM_IP', description: 'VM public IP')
         string(name: 'DEPLOY_DIR', description: 'Directory on VM to deploy the repository')
