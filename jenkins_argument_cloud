@@ -116,7 +116,7 @@ pipeline {
                             set -e
                             # Create deployment directory if it does not exist
                             mkdir -p ${params.DEPLOY_DIR}
-                            cd /${params.DEPLOY_DIR} || exit 1
+                            cd "/${params.DEPLOY_DIR}" || exit 1
 
                             # Clone repo if directory is empty
                             if [ -z "$(ls -A ${params.DEPLOY_DIR})" ]; then
