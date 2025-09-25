@@ -10,6 +10,7 @@ import {
   fetchTraffic,
   startSniffing,
   stopSniffing,
+  fetchStatus
 } from "../Services/Api";
 
 const DashboardPage = () => {
@@ -18,6 +19,7 @@ const DashboardPage = () => {
   const [traffic, setTraffic] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [iface, setIface] = useState("");
 
   const loadData = async () => {
     setLoading(true);
@@ -45,28 +47,38 @@ const DashboardPage = () => {
     try {
       await startSniffing();
       setIsCapturing(true);
-      await loadData();
-    } catch (err) {
-      console.error("Start capture failed:", err);
+
+     const status = await fetchStatus();
+     setIface(status.iface || "");
+
+     await loadData();
+    } 
+     catch (err) {
+     console.error("Start capture failed:", err);
     }
   };
 
+
   const handleStopCapture = async () => {
-    try {
+     try {
       await stopSniffing();
       setIsCapturing(false);
+      setIface("");
       await loadData();
-    } catch (err) {
+    } 
+    catch (err) {
       console.error("Stop capture failed:", err);
     }
   };
 
-  const handleClearAll = () => {
-    setPackets([]);
-    setCounts({});
-    setTraffic([]);
-    setIsCapturing(false);
-  };
+const handleClearAll = () => {
+  setPackets([]);
+  setCounts({});
+  setTraffic([]);
+  setIsCapturing(false);
+  setIface("");
+};
+
 
   return (
     <div className="dashboard">
@@ -110,7 +122,7 @@ const DashboardPage = () => {
             Service Status: <b className="green">Connected</b>
           </span>
           <span>
-            Capture Status: <b>{isCapturing ? "Active" : "Inactive"}</b>
+            Capture Status: <b>{isCapturing ? `Active (Interface: ${iface})` : "Inactive"}</b>
           </span>
           <span>
             Packets Captured: <b>{packets.length} / 500</b>

@@ -24,3 +24,5 @@ export const MOCK_TRAFFIC = [
   { time: "2025-09-14T10:25:00Z", packets: 18 },
   { time: "2025-09-14T11:45:00Z", packets: 45 }
 ];
+
+export const MOCK_STATUS = {"iface":"enp39s0","running":true};

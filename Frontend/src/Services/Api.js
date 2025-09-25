@@ -1,5 +1,5 @@
 import axios from "axios";
-import { MOCK_PACKETS, MOCK_COUNTS, MOCK_TRAFFIC } from "./mockData";
+import { MOCK_PACKETS, MOCK_COUNTS, MOCK_TRAFFIC, MOCK_STATUS } from "./mockData";
 
 const BASE_URL = process.env.REACT_APP_BASE_URL || 'http://3.99.207.184:5000';
 // const BASE_URL = "http://localhost:5000";
@@ -56,3 +56,15 @@ export const stopSniffing = async () => {
     throw err;
   }
 };
+
+
+export const fetchStatus = async () => {
+  try {
+    const res = await axios.get(`${BASE_URL}/api/status`);
+    return res.data;
+  } catch (err) {
+    console.warn("Using mock status:", err.message);
+    return delay(MOCK_STATUS);
+  }
+};
+
