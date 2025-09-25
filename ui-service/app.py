@@ -41,13 +41,22 @@ def to_ist(value):
 @app.route("/api/start_sniffing", methods=["POST"])
 def start_sniffing():
     try:
-        logging.info("📡 Forwarding start_sniffing request to capture-service...")
-        res = requests.post(f"{CAPTURE_URL}/start_sniffing")
+        iface = request.args.get("iface")  # ✅ take iface from UI request
+        mode = request.args.get("mode", "LIVE")
+
+        logging.info(f"📡 Forwarding start_sniffing request to capture-service... iface={iface}")
+
+        params = {"mode": mode}
+        if iface:  # only pass iface if user selected
+            params["iface"] = iface
+
+        res = requests.post(f"{CAPTURE_URL}/start_sniffing", params=params)
         logging.info(f"✅ Capture-service response: {res.json()}")
         return jsonify({"status": "started", "response": res.json()})
     except Exception as e:
         logging.error(f"❌ Failed to start sniffing: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/stop_sniffing", methods=["POST"])
 def stop_sniffing():
