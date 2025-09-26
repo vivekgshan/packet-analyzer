@@ -10,6 +10,7 @@ services:
       SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
       SPLUNK_PASSWORD: "changeme123"
     ports:
+      - "8089:8089"   #RestApi
       - "8000:8000"   # UI
       - "8088:8088"   # HEC
     networks:
