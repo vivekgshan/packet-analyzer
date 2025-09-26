@@ -76,7 +76,7 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "f973c2f1-d1ac-4064-85cd-384984475417"
+        splunk-token: "798093f9-13b1-4cdf-952a-01861b4dad85"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "persistor-service"
@@ -100,7 +100,7 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "f973c2f1-d1ac-4064-85cd-384984475417"
+        splunk-token: "798093f9-13b1-4cdf-952a-01861b4dad85"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "parser-service"
@@ -124,7 +124,7 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "f973c2f1-d1ac-4064-85cd-384984475417"
+        splunk-token: "798093f9-13b1-4cdf-952a-01861b4dad85"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "analyzer-service"
@@ -147,7 +147,7 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "f973c2f1-d1ac-4064-85cd-384984475417"
+        splunk-token: "798093f9-13b1-4cdf-952a-01861b4dad85"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "ui-service"
@@ -174,7 +174,7 @@ services:
       driver: splunk
       options:
         splunk-url: "http://localhost:8088"
-        splunk-token: "f973c2f1-d1ac-4064-85cd-384984475417"
+        splunk-token: "798093f9-13b1-4cdf-952a-01861b4dad85"
         splunk-insecureskipverify: "true"
         splunk-format: "json"
         tag: "capture-service"
