@@ -39,7 +39,7 @@ services:
         condition: service_healthy
 
   # ----------------------
-  # Microservices
+  # Persistor Service
   # ----------------------
   persistor-service:
     image: ${DOCKERHUB_USER}/persistor-service:latest
@@ -55,6 +55,9 @@ services:
       db:
         condition: service_healthy
 
+  # ----------------------
+  # Parser Service
+  # ----------------------
   parser-service:
     image: ${DOCKERHUB_USER}/parser-service:latest
     container_name: parser-service
@@ -71,6 +74,9 @@ services:
       persistor-service:
         condition: service_started
 
+  # ----------------------
+  # Analyzer Service
+  # ----------------------
   analyzer-service:
     image: ${DOCKERHUB_USER}/analyzer-service:latest
     container_name: analyzer-service
@@ -85,6 +91,9 @@ services:
       parser-service:
         condition: service_started
 
+  # ----------------------
+  # UI Service
+  # ----------------------
   ui-service:
     image: ${DOCKERHUB_USER}/ui-service:latest
     container_name: ui-service
@@ -100,6 +109,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # ----------------------
+  # Capture Service
+  # ----------------------
   capture-service:
     image: ${DOCKERHUB_USER}/capture-service:latest
     container_name: capture-service
@@ -114,23 +126,29 @@ services:
     depends_on:
       parser-service:
         condition: service_started  
-        
+
+  # ----------------------
+  # Splunk Universal Forwarder
+  # ----------------------
   splunk-uf:
-  image: splunk/universalforwarder:latest
-  container_name: splunk-uf
-  hostname: splunk-uf
-  environment:
-    SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
-    SPLUNK_START_ARGS: "--accept-license"
-    SPLUNK_PASSWORD: simla@123
-    SPLUNK_FORWARD_SERVER: "3.110.195.161:9997" # <-- Splunk Master 
-    SPLUNK_ADD: "monitor /var/lib/docker/containers"
-  volumes:
-    - /var/lib/docker/containers:/var/lib/docker/containers:ro
-  networks:
-    - packet-net
+    image: splunk/universalforwarder:latest
+    container_name: splunk-uf
+    hostname: splunk-uf
+    environment:
+      SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
+      SPLUNK_START_ARGS: "--accept-license"
+      SPLUNK_PASSWORD: simla@123
+      SPLUNK_FORWARD_SERVER: "3.110.195.161:9997"   # Splunk Indexer
+      SPLUNK_ADD: "monitor /var/lib/docker/containers"
+    volumes:
+      - ./uf-config:/opt/splunkforwarder/etc/system/local
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks:
+      - packet-net
 
-
+# ----------------------
+# Networks
+# ----------------------
 networks:
   packet-net:
     driver: bridge
