@@ -115,23 +115,6 @@ services:
       parser-service:
         condition: service_started
 
-  # ----------------------
-  # Splunk Universal Forwarder
-  # ----------------------
-  splunk-uf:
-    image: outcoldsolutions/splunk-universalforwarder:latest   # community forwarder image
-    container_name: splunk-uf
-    environment:
-      SPLUNK_START_ARGS: "--accept-license"
-      SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
-      SPLUNK_PASSWORD: "changeme123"
-    volumes:
-      - /var/lib/docker/containers:/host/containers:ro
-      - ./uf_inputs:/opt/splunkforwarder/etc/system/local
-    networks:
-      - packet-net
-    restart: always
-
 networks:
   packet-net:
     driver: bridge
