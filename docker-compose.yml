@@ -113,7 +113,20 @@ services:
     restart: always
     depends_on:
       parser-service:
-        condition: service_started
+        condition: service_started  splunk-uf:
+    image: splunk/universalforwarder:9.1.2   # official Splunk UF image
+    container_name: splunk-uf
+    hostname: splunk-uf
+    environment:
+      SPLUNK_START_ARGS: "--accept-license"
+      SPLUNK_USER: admin
+      SPLUNK_PASSWORD: changeme123
+      SPLUNK_FORWARD_SERVER: "3.110.195.161:9997"   # <-- Splunk Master
+      SPLUNK_ADD: "monitor /var/lib/docker/containers"
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks:
+      - packet-net
 
 networks:
   packet-net:
