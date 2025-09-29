@@ -123,6 +123,7 @@ services:
     container_name: splunk-uf
     environment:
       SPLUNK_START_ARGS: "--accept-license"
+      SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
       SPLUNK_PASSWORD: "changeme123"
     volumes:
       - /var/lib/docker/containers:/host/containers:ro
