@@ -120,7 +120,7 @@ services:
     environment:
       SPLUNK_START_ARGS: "--accept-license"
       SPLUNK_USER: admin
-      SPLUNK_PASSWORD: changeme123
+      SPLUNK_PASSWORD: simla@123
       SPLUNK_FORWARD_SERVER: "3.110.195.161:9997"   # <-- Splunk Master
       SPLUNK_ADD: "monitor /var/lib/docker/containers"
     volumes:
