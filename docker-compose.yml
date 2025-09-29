@@ -119,6 +119,8 @@ services:
     environment:
       SERVICE_PORT: 5004
     network_mode: "host"   # ✅ critical for sniffing
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # 👈 allow Python SDK to talk to Docker
     cap_add:
       - NET_ADMIN
       - NET_RAW
