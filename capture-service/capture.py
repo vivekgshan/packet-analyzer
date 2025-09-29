@@ -19,29 +19,50 @@ last_error = None
 packet_count = 0
 last_log_time = time.time()
 
-# Cache for IP → container mapping
-_container_cache = {}
-docker_client = docker.from_env()
+# Track last observed src_ip/container for /status endpoint
+last_src_ip = None
+last_container = None
+
+# Docker client (used for container resolution)
+docker_client = None
+try:
+    docker_client = docker.from_env()
+except Exception as e:
+    logging.warning(f"⚠️ Could not init docker client: {e}")
+
 
 def resolve_container_cached(ip):
-    """Try to resolve container name for a given src_ip using Docker SDK"""
-    if not ip:
+    """
+    Try to map an IP address to a Docker container name.
+    Works for container IPs directly (bridge network), 
+    or if host IP is seen, tries NAT mapping heuristics.
+    """
+    global docker_client
+    if not docker_client:
         return None
-    if ip in _container_cache:
-        return _container_cache[ip]
 
     try:
-        for c in docker_client.containers.list():
-            c_info = c.attrs["NetworkSettings"]["Networks"]
-            for net, net_data in c_info.items():
-                if net_data.get("IPAddress") == ip:
-                    _container_cache[ip] = c.name
+        containers = docker_client.containers.list()
+        for c in containers:
+            info = c.attrs
+            # iterate all networks of the container
+            for net_name, net_data in info["NetworkSettings"]["Networks"].items():
+                c_ip = net_data.get("IPAddress")
+                if c_ip == ip:
                     return c.name
+        # NAT case: src_ip == host IP, we cannot directly map
+        # but we can try psutil net_connections to see if a container IP is involved
+        for c in containers:
+            info = c.attrs
+            for net_name, net_data in info["NetworkSettings"]["Networks"].items():
+                c_ip = net_data.get("IPAddress")
+                if not c_ip:
+                    continue
+                for conn in psutil.net_connections(kind="inet"):
+                    if conn.laddr.ip == c_ip:
+                        return c.name
     except Exception as e:
-        logging.warning(f"⚠️ Docker lookup failed: {e}")
-
-    # fallback: not a container IP
-    _container_cache[ip] = None
+        logging.error(f"❌ Container resolution failed: {e}")
     return None
 
 
@@ -51,11 +72,12 @@ def send_packet(pkt, source="LIVE"):
     packet_count += 1
     src_ip = None
     container_name = None
+
     if pkt.haslayer("IP"):   # only if IP packet
         src_ip = pkt["IP"].src
         container_name = resolve_container_cached(src_ip)
 
-    # Save last seen info for /status API
+    # update globals for /status
     last_src_ip = src_ip
     last_container = container_name
 
@@ -86,13 +108,14 @@ def get_default_iface():
         logging.info(f"🔧 Using IFACE from env: {iface}")
         return iface
 
-	# find default route interface
+    # find default route interface
     gws = psutil.net_if_stats()
     addrs = psutil.net_if_addrs()
 
     # get routes to check default gateway
     routes = psutil.net_if_stats()
-    # psutil doesn't give default gw directly, so use socket trick:							  
+    # psutil doesn't give default gw directly, so use socket trick:
+
     try:
         # 🔹 Create a temporary UDP socket
         # (UDP is used here because it's connectionless and very lightweight)
@@ -141,7 +164,6 @@ def get_default_iface():
     #    or inside some containers), then we must use it.
     logging.warning("⚠️ No external interface found, using loopback 'lo'")
     return "lo"
-
 
 
 def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
@@ -250,9 +272,6 @@ def list_interfaces():
     merged = sorted(dict.fromkeys(curated + filtered))
     return jsonify({"interfaces": merged})
 
-
-last_src_ip = None
-last_container = None
 
 @app.route("/status", methods=["GET"])
 def status():
