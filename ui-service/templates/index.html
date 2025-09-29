@@ -157,7 +157,11 @@ function updateStatus() {
               document.getElementById("sniff-status").className = "status-stopped";
           } else if (data.running) {
               let iface = data.iface ? ` (Interface: ${data.iface})` : "";
-              document.getElementById("sniff-status").innerText = "✅ Sniffing Started" + iface;
+              let srcIp = data.last_src_ip ? ` | SrcIP: ${data.last_src_ip}` : "";
+              let container = data.last_container ? ` | Container: ${data.last_container}` : " | Container: None";
+
+              document.getElementById("sniff-status").innerText =
+                  "✅ Sniffing Started" + iface + srcIp + container;
               document.getElementById("sniff-status").className = "status-running";
           } else {
               document.getElementById("sniff-status").innerText = "🛑 Sniffing Stopped";
@@ -169,7 +173,6 @@ function updateStatus() {
           document.getElementById("sniff-status").className = "status-idle";
       });
 }
-
 
 function startSniffing() {
     let iface = document.getElementById("iface-select").value;
@@ -193,7 +196,6 @@ function startSniffing() {
       });
 }
 
-
 function stopSniffing() {
   fetch("/api/stop_sniffing", { method: "POST" })
     .then(() => updateStatus())
@@ -216,7 +218,7 @@ const FALLBACK_IFACES = [
 // Fills the dropdown from /api/interfaces; falls back to a curated list if needed
 function loadInterfaces() {
   const select = document.getElementById("iface-select");
-  // keep only the first option ("Auto-detect")
+  // keep only the first option ("Auto-detect")										   
   select.length = 1;
 
   fetch("/api/interfaces")
@@ -236,7 +238,7 @@ function loadInterfaces() {
       });
     })
     .catch(() => {
-      // hard fallback: use curated list
+	  // hard fallback: use curated list									
       const seen = new Set();
       FALLBACK_IFACES.forEach(name => {
         if (!seen.has(name)) {
