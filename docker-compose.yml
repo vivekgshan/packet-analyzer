@@ -113,7 +113,8 @@ services:
     restart: always
     depends_on:
       parser-service:
-        condition: service_started  splunk-uf:
+        condition: service_started  
+  splunk-uf:
     image: splunk/universalforwarder:9.1.2   # official Splunk UF image
     container_name: splunk-uf
     hostname: splunk-uf
