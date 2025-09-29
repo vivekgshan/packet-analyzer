@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from scapy.all import sniff, rdpcap, get_if_list
 from scapy.utils import PcapReader
-import requests, time, os, threading, logging, psutil, socket, docker
+import requests, time, os, threading, logging, psutil, socket, docker  # ✅ added docker
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -19,57 +19,49 @@ last_error = None
 packet_count = 0
 last_log_time = time.time()
 
-# Track last observed src_ip/container for /status endpoint
+# ✅ Cache + Docker client for IP → Container name resolution
+container_cache = {}
+docker_client = docker.from_env()
+session_container = None  # track session container once detected
 last_src_ip = None
 last_container = None
 
-# Docker client (used for container resolution)
-docker_client = None
-try:
-    docker_client = docker.from_env()
-except Exception as e:
-    logging.warning(f"⚠️ Could not init docker client: {e}")
-
 
 def resolve_container_cached(ip):
-    """
-    Try to map an IP address to a Docker container name.
-    Works for container IPs directly (bridge network), 
-    or if host IP is seen, tries NAT mapping heuristics.
-    """
-    global docker_client
-    if not docker_client:
+    """Resolve container name from IP, using cache + Docker SDK"""
+    global container_cache, docker_client, session_container
+
+    if not ip:
         return None
 
+    # return from cache if already known
+    if ip in container_cache:
+        return container_cache[ip]
+
     try:
-        containers = docker_client.containers.list()
-        for c in containers:
-            info = c.attrs
-            # iterate all networks of the container
-            for net_name, net_data in info["NetworkSettings"]["Networks"].items():
-                c_ip = net_data.get("IPAddress")
-                if c_ip == ip:
-                    return c.name
-        # NAT case: src_ip == host IP, we cannot directly map
-        # but we can try psutil net_connections to see if a container IP is involved
-        for c in containers:
-            info = c.attrs
-            for net_name, net_data in info["NetworkSettings"]["Networks"].items():
-                c_ip = net_data.get("IPAddress")
-                if not c_ip:
-                    continue
-                for conn in psutil.net_connections(kind="inet"):
-                    if conn.laddr.ip == c_ip:
-                        return c.name
+        for c in docker_client.containers.list():
+            details = c.attrs
+            networks = details.get("NetworkSettings", {}).get("Networks", {})
+            for net_name, net_data in networks.items():
+                if net_data.get("IPAddress") == ip:
+                    name = c.name
+                    container_cache[ip] = name
+                    logging.info(f"🔎 Resolved container {name} for IP {ip}")
+                    if not session_container:   # set session container if not set
+                        session_container = name
+                    return name
     except Exception as e:
-        logging.error(f"❌ Container resolution failed: {e}")
+        logging.warning(f"⚠️ Docker lookup failed for {ip}: {e}")
+
     return None
+
 
 
 def send_packet(pkt, source="LIVE"):
     """Send packet data to parser service with rate-limited logging"""
-    global packet_count, last_log_time, last_src_ip, last_container
+    global packet_count, last_log_time, last_src_ip, last_container, session_container
     packet_count += 1
+
     src_ip = None
     container_name = None
 
@@ -77,7 +69,11 @@ def send_packet(pkt, source="LIVE"):
         src_ip = pkt["IP"].src
         container_name = resolve_container_cached(src_ip)
 
-    # update globals for /status
+    # If container not detected for this packet, but we already have one for session → reuse
+    if not container_name and session_container:
+        container_name = session_container
+
+    # Update globals for /status endpoint
     last_src_ip = src_ip
     last_container = container_name
 
@@ -98,6 +94,7 @@ def send_packet(pkt, source="LIVE"):
                 last_log_time = time.time()
     except Exception as e:
         logging.error(f"❌ Error sending to parser: {e}")
+
 
 
 def get_default_iface():
@@ -166,6 +163,7 @@ def get_default_iface():
     return "lo"
 
 
+
 def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
     global stop_flag, packet_count, last_log_time, current_iface
     stop_flag = False
@@ -208,8 +206,9 @@ def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
 
 @app.route("/start_sniffing", methods=["POST"])
 def start_sniffing():
-    global sniff_thread, stop_flag, current_iface, last_error
+    global sniff_thread, stop_flag, current_iface, last_error, session_container
     last_error = None  # reset old error
+    session_container = None  # reset container session when new sniffing starts
     
     if sniff_thread and sniff_thread.is_alive():
         return jsonify({"status": "already_running"}), 400
@@ -253,6 +252,7 @@ def stop_sniffing():
     return jsonify({"status": "sniffing_stopped"})
 
 
+									  
 @app.route("/interfaces", methods=["GET"])
 def list_interfaces():
     names = list(psutil.net_if_addrs().keys())
@@ -285,6 +285,7 @@ def status():
         "last_src_ip": last_src_ip,
         "last_container": last_container
     })
+
 
 
 @app.route("/", methods=["GET"])
