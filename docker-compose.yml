@@ -126,7 +126,6 @@ services:
     SPLUNK_FORWARD_SERVER: "3.110.195.161:9997" # <-- Splunk Master 
     SPLUNK_ADD: "monitor /var/lib/docker/containers"
   volumes:
-    - ./uf-config:/opt/splunkforwarder/etc/system/local
     - /var/lib/docker/containers:/var/lib/docker/containers:ro
   networks:
     - packet-net
