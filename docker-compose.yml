@@ -115,7 +115,7 @@ services:
       parser-service:
         condition: service_started  
   splunk-uf:
-    image: splunk/universalforwarder:9.1.2   # official Splunk UF image
+    image: splunk/universalforwarder:latest   # official Splunk UF image
     container_name: splunk-uf
     hostname: splunk-uf
     environment:
