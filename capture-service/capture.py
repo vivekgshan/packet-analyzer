@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from scapy.all import sniff, rdpcap, get_if_list
 from scapy.utils import PcapReader
-import requests, time, os, threading, logging, psutil,socket
+import requests, time, os, threading, logging, psutil, socket, docker
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -19,26 +19,63 @@ last_error = None
 packet_count = 0
 last_log_time = time.time()
 
+# Cache for IP → container mapping
+_container_cache = {}
+docker_client = docker.from_env()
+
+def resolve_container_cached(ip):
+    """Try to resolve container name for a given src_ip using Docker SDK"""
+    if not ip:
+        return None
+    if ip in _container_cache:
+        return _container_cache[ip]
+
+    try:
+        for c in docker_client.containers.list():
+            c_info = c.attrs["NetworkSettings"]["Networks"]
+            for net, net_data in c_info.items():
+                if net_data.get("IPAddress") == ip:
+                    _container_cache[ip] = c.name
+                    return c.name
+    except Exception as e:
+        logging.warning(f"⚠️ Docker lookup failed: {e}")
+
+    # fallback: not a container IP
+    _container_cache[ip] = None
+    return None
+
 
 def send_packet(pkt, source="LIVE"):
     """Send packet data to parser service with rate-limited logging"""
-    global packet_count, last_log_time
+    global packet_count, last_log_time, last_src_ip, last_container
     packet_count += 1
+    src_ip = None
+    container_name = None
+    if pkt.haslayer("IP"):   # only if IP packet
+        src_ip = pkt["IP"].src
+        container_name = resolve_container_cached(src_ip)
+
+    # Save last seen info for /status API
+    last_src_ip = src_ip
+    last_container = container_name
+
     data = {
         "raw": pkt.summary(),
         "hex": bytes(pkt).hex(),
-        "source": source
+        "source": source,
+        "src_ip": src_ip,                # ✅ NEW
+        "container": container_name      # ✅ NEW
     }
+
     try:
         resp = requests.post(PARSER_URL, json=data, timeout=3)
         if resp.status_code == 200:
             # ✅ log every 100 packets OR every 5s
             if packet_count % 100 == 0 or (time.time() - last_log_time) > 5:
-                logging.info(f"📤 Sent {packet_count} packets so far (latest={data['raw'][:50]})")
+                logging.info(f"📤 Sent {packet_count} packets (latest src_ip={src_ip}, container={container_name})")
                 last_log_time = time.time()
     except Exception as e:
         logging.error(f"❌ Error sending to parser: {e}")
-
 
 
 def get_default_iface():
@@ -49,14 +86,13 @@ def get_default_iface():
         logging.info(f"🔧 Using IFACE from env: {iface}")
         return iface
 
-    # find default route interface
+	# find default route interface
     gws = psutil.net_if_stats()
     addrs = psutil.net_if_addrs()
 
     # get routes to check default gateway
     routes = psutil.net_if_stats()
-    # psutil doesn't give default gw directly, so use socket trick:
-
+    # psutil doesn't give default gw directly, so use socket trick:							  
     try:
         # 🔹 Create a temporary UDP socket
         # (UDP is used here because it's connectionless and very lightweight)
@@ -195,7 +231,6 @@ def stop_sniffing():
     return jsonify({"status": "sniffing_stopped"})
 
 
-									  
 @app.route("/interfaces", methods=["GET"])
 def list_interfaces():
     names = list(psutil.net_if_addrs().keys())
@@ -215,15 +250,21 @@ def list_interfaces():
     merged = sorted(dict.fromkeys(curated + filtered))
     return jsonify({"interfaces": merged})
 
+
+last_src_ip = None
+last_container = None
+
 @app.route("/status", methods=["GET"])
 def status():
-    """Return sniffing status + interface or last error"""
-    global last_error
+    """Return sniffing status + interface + last seen src_ip/container"""
+    global last_error, last_src_ip, last_container
     is_running = sniff_thread and sniff_thread.is_alive()
     return jsonify({
         "running": is_running,
         "iface": current_iface if is_running else None,
-        "error": last_error   # ✅ include error if present
+        "error": last_error,
+        "last_src_ip": last_src_ip,
+        "last_container": last_container
     })
 
 
