@@ -127,25 +127,26 @@ services:
       parser-service:
         condition: service_started  
 
-  # ----------------------
+# ---------------------  # ----------------------
   # Splunk Universal Forwarder
   # ----------------------
   splunk-uf:
     image: splunk/universalforwarder:latest
     container_name: splunk-uf
     hostname: splunk-uf
+    user: "41812:41812"   # Run as Splunk UF user
     environment:
-      SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
       SPLUNK_START_ARGS: "--accept-license"
       SPLUNK_PASSWORD: simla@123
       SPLUNK_FORWARD_SERVER: "3.110.195.161:9997"   # Splunk Indexer
       SPLUNK_ADD: "monitor /var/lib/docker/containers"
     volumes:
-      - ./uf-config:/opt/splunkforwarder/etc/system/local
+      - ./uf-config:/opt/splunkforwarder/etc/system/local:rw
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     networks:
       - packet-net
-
+    restart: always
+    
 # ----------------------
 # Networks
 # ----------------------
