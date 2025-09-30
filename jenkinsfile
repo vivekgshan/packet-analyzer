@@ -4,40 +4,56 @@ pipeline {
         stage('prerequisites') {
             steps {
                 script {
-                    // Check if docker is installed
-                    def dockerPath = sh(script: 'command -v docker || true', returnStdout: true).trim()
-                    if (!dockerPath) {
-                        error 'Docker is not installed.'
+                    // Check if Docker is installed; if not, install
+                    def dockerCheck = sh(script: "command -v docker || true", returnStdout: true).trim()
+                    if (!dockerCheck) {
+                        echo "Docker not found, installing Docker..."
+                        sh """
+                            sudo apt update
+                            sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
+                            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                            echo \\
+                              "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \\
+                              \$(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                            sudo apt update
+                            sudo apt install -y docker-ce
+                            sudo systemctl start docker
+                            sudo systemctl enable docker
+                        """
                     } else {
-                        echo "Docker is installed at: ${dockerPath}"
+                        echo "Docker is installed at: ${dockerCheck}"
                     }
 
-                    // Check if docker-compose is installed
-                    def dockerComposePath = sh(script: 'command -v docker-compose || command -v docker-compose || true', returnStdout: true).trim()
-                    if (!dockerComposePath) {
-                        error 'Docker Compose is not installed.'
+                    // Check if Docker Compose is installed; if not, install
+                    def dockerComposeCheck = sh(script: "command -v docker-compose || command -v docker-compose || true", returnStdout: true).trim()
+                    if (!dockerComposeCheck) {
+                        echo "Docker Compose not found, installing Docker Compose..."
+                        sh """
+                            sudo curl -L "https://github.com/docker/compose/releases/download/v2.18.1/docker-compose-\$(uname -s)-\$(uname -m)" -o /usr/local/bin/docker-compose
+                            sudo chmod +x /usr/local/bin/docker-compose
+                        """
                     } else {
-                        echo "Docker Compose is installed at: ${dockerComposePath}"
+                        echo "Docker Compose is installed at: ${dockerComposeCheck}"
                     }
 
                     // Check if Docker service is running
-                    def dockerServiceStatus = sh(script: 'systemctl is-active docker || true', returnStdout: true).trim()
-                    if (dockerServiceStatus == 'active') {
-                        echo 'Docker service is running.'
+                    def dockerServiceStatus = sh(script: "systemctl is-active docker || true", returnStdout: true).trim()
+                    if (dockerServiceStatus == "active") {
+                        echo "Docker service is running"
                     } else {
-                        error 'Docker service is not running.'
+                        error "Docker service is not running."
                     }
 
-                    // Check if Docker Compose services are up
-                    def dockerComposeStatus = sh(script: 'docker-compose ps || true', returnStdout: true).trim()
+                    // Check Docker Compose services (running containers)
+                    def dockerComposeStatus = sh(script: "docker-compose ps || true", returnStdout: true).trim()
                     if (dockerComposeStatus) {
                         echo "Docker Compose services status:\n${dockerComposeStatus}"
                     } else {
                         echo "No Docker Compose services running."
                     }
 
-                    // Exit the pipeline after checks
-                    error "Exiting after prerequisite checks."
+                    // Exit after the prerequisite check
+                    error("Exiting after prerequisite check.")
                 }
             }
         }
