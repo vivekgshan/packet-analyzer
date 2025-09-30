@@ -37,15 +37,19 @@ export const fetchTraffic = async () => {
   }
 };
 
-export const startSniffing = async () => {
+
+export const startSniffing = async (iface) => {
   try {
-    const res = await axios.post(`${BASE_URL}/api/start_sniffing`);
+    let url = `${BASE_URL}/api/start_sniffing`;
+    if (iface) url += `?iface=${iface}`;
+    const res = await axios.post(url);
     return res.data;
   } catch (err) {
     console.error("Failed to start sniffing:", err.message);
     throw err;
   }
 };
+
 
 export const stopSniffing = async () => {
   try {
@@ -67,4 +71,15 @@ export const fetchStatus = async () => {
     return delay(MOCK_STATUS);
   }
 };
+
+export const fetchInterfaces = async () => {
+  try {
+    const res = await axios.get(`${BASE_URL}/api/interfaces`);
+    return res.data;
+  } catch (err) {
+    console.warn("Using mock status:", err.message);
+    return delay(MOCK_STATUS);
+  }
+};
+
 

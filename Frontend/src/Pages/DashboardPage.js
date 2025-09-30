@@ -3,14 +3,15 @@ import ProtocolPie from "../Components/ProtocolPie";
 import TrafficLine from "../Components/TrafficLine";
 import Loader from "../Components/Loader";
 import PacketTable from "../Components/PacketTable";
-import StatsPanel from "../Components/StatsPanel";
+// import StatsPanel from "../Components/StatsPanel";
 import {
   fetchPackets,
   fetchProtocolCounts,
   fetchTraffic,
   startSniffing,
   stopSniffing,
-  fetchStatus
+  fetchStatus,
+  fetchInterfaces
 } from "../Services/Api";
 
 const DashboardPage = () => {
@@ -20,18 +21,22 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [isCapturing, setIsCapturing] = useState(false);
   const [iface, setIface] = useState("");
+  const [interfaces, setInterfaces] = useState([]);
+  const [selectedInterface, setSelectedInterface] = useState("")
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pkt, cnt, trf] = await Promise.all([
+      const [pkt, cnt, trf, ifaceRes] = await Promise.all([
         fetchPackets(),
         fetchProtocolCounts(),
         fetchTraffic(),
+        fetchInterfaces(),
       ]);
       setPackets(pkt);
       setCounts(cnt);
       setTraffic(trf);
+      setInterfaces(ifaceRes.interfaces || [])
     } catch (err) {
       console.error("Failed to load data:", err);
     } finally {
@@ -45,7 +50,7 @@ const DashboardPage = () => {
 
   const handleStartCapture = async () => {
     try {
-      await startSniffing();
+      await startSniffing(selectedInterface);
       setIsCapturing(true);
 
      const status = await fetchStatus();
@@ -59,17 +64,16 @@ const DashboardPage = () => {
   };
 
 
-  const handleStopCapture = async () => {
-     try {
-      await stopSniffing();
-      setIsCapturing(false);
-      setIface("");
-      await loadData();
-    } 
-    catch (err) {
-      console.error("Stop capture failed:", err);
-    }
-  };
+const handleStopCapture = async () => {
+  try {
+    await stopSniffing();
+    setIsCapturing(false);
+    setIface("");
+    await loadData();
+  } catch (err) {
+    console.error("Stop capture failed:", err);
+  }
+};
 
 const handleClearAll = () => {
   setPackets([]);
@@ -89,15 +93,15 @@ const handleClearAll = () => {
           <p>Network Traffic Monitor</p>
         </div>
         <div className="header-right">
-          <div className="stat-box">
+          {/* <div className="stat-box">
             PACKETS CAPTURED <b>{packets.length}</b>
-          </div>
+          </div> */}
           <div className={`stat-box ${isCapturing ? "green" : "yellow"}`}>
             {isCapturing ? "CAPTURING" : "READY TO CAPTURE"}
           </div>
-          <div className="stat-box">
+          {/* <div className="stat-box">
             CAPTURE PROGRESS {packets.length} packets stored
-          </div>
+          </div> */}
         </div>
       </header>
 
@@ -107,6 +111,18 @@ const handleClearAll = () => {
         <div className="control-row">
           <label>Packet Limit:</label>
           <input type="number" defaultValue={500} />
+          <label>Interface:</label>
+            <select
+              value={selectedInterface}
+              onChange={(e) => setSelectedInterface(e.target.value)}
+            >
+          <option value="">Select Interface</option>
+            {interfaces.map((iface) => (
+            <option key={iface} value={iface}>
+            {iface}
+            </option>
+          ))}
+          </select>
           <button className="btn green" onClick={handleStartCapture}>
             ▶ Start Capture
           </button>
@@ -138,7 +154,7 @@ const handleClearAll = () => {
         <div className="card wide" id="packetTable">
           {loading ? <Loader /> : <PacketTable packets={packets} />}
         </div>
-        <StatsPanel packets={packets} counts={counts} />
+        {/* <StatsPanel packets={packets} counts={counts} /> */}
       </section>
 
       {/* Protocol Cards */}

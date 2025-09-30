@@ -47,7 +47,7 @@ body {
 .btn.teal { background: #0d9488; }
 
 /* Layout */
-.content-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem }
+.content-grid { display: contents; grid-template-columns: 2fr 1fr; gap: 1rem }
 .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 2rem; }
 
 /* Table */
@@ -211,7 +211,7 @@ body {
 
 /* Layout grids */
 .content-grid {
-  display: grid;
+  display: contents;
   grid-template-columns: 2fr 1fr;
   gap: 1rem;
   margin-top: 1rem;
@@ -344,7 +344,7 @@ body {
 
 /* Equal height cards in grid */
 .content-grid {
-  display: grid;
+  display: contents;
   grid-template-columns: 2fr 1fr;
   gap: 1rem;
   align-items: stretch; /* make both equal height */
