@@ -127,26 +127,30 @@ services:
       parser-service:
         condition: service_started  
 
-# ---------------------  # ----------------------
+  # ----------------------
   # Splunk Universal Forwarder
   # ----------------------
   splunk-uf:
     image: splunk/universalforwarder:latest
     container_name: splunk-uf
     hostname: splunk-uf
-    user: "41812:41812"   # Run as Splunk UF user
+    user: root
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "chown -R 41812:41812 /opt/container_artifact /opt/splunkforwarder &&
+       exec /sbin/entrypoint.sh start-service"
     environment:
+      SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
       SPLUNK_START_ARGS: "--accept-license"
       SPLUNK_PASSWORD: simla@123
-      SPLUNK_FORWARD_SERVER: "3.110.195.161:9997"   # Splunk Indexer
+      SPLUNK_FORWARD_SERVER: "3.110.195.161:9997"
       SPLUNK_ADD: "monitor /var/lib/docker/containers"
     volumes:
-      - ./uf-config:/opt/splunkforwarder/etc/system/local:rw
+      - ./uf-config:/opt/splunkforwarder/etc/system/local
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     networks:
       - packet-net
-    restart: always
-    
+
 # ----------------------
 # Networks
 # ----------------------
