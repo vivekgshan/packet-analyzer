@@ -112,25 +112,25 @@ pipeline {
                 sshagent(['azure-ssh-key']) {
                     sh """
                         echo "Deploying to VM: ${params.VM_USER}@${params.VM_IP}..."
-                        ssh -o StrictHostKeyChecking=no "${params.VM_USER}@${params.VM_IP}" bash -s << 'EOF'
-                            set -e
-                            # Create deployment directory if it does not exist
-                            mkdir -p ${params.DEPLOY_DIR}
-                            cd ${params.DEPLOY_DIR} || exit 1
+                        ssh -o StrictHostKeyChecking=no "${params.VM_USER}@${params.VM_IP}" bash -s <<EOF
+set -e
+# Create deployment directory if it does not exist
+mkdir -p ${params.DEPLOY_DIR}
+cd ${params.DEPLOY_DIR} || exit 1
 
-                            # Clone repo if directory is empty
-                            if [ -z "\$(ls -A ${params.DEPLOY_DIR})" ]; then
-                                git clone ${params.GIT_URL} .
-                            fi
+# Clone repo if directory is empty
+if [ -z "\$(ls -A ${params.DEPLOY_DIR})" ]; then
+    git clone ${params.GIT_URL} .
+fi
 
-                            # Fetch and reset to branch
-                            git fetch origin ${params.GIT_BRANCH}
-                            git reset --hard origin/${params.GIT_BRANCH}
+# Fetch and reset to branch
+git fetch origin ${params.GIT_BRANCH}
+git reset --hard origin/${params.GIT_BRANCH}
 
-                            export DOCKERHUB_USER=${params.DOCKERHUB_USER}
-                            docker-compose pull
-                            docker-compose up -d --remove-orphans
-        EOF
+export DOCKERHUB_USER=${params.DOCKERHUB_USER}
+docker-compose pull
+docker-compose up -d --remove-orphans
+EOF
                     """
                 }
             }
