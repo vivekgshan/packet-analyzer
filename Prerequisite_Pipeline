@@ -6,22 +6,23 @@ pipeline {
                 script {
                     // Add Jenkins user to docker group (requires sudo)
                     echo "Adding jenkins user to docker group..."
-                    sh "sudo usermod -aG docker ${env.USER} || true"  // safe append
+                    // Use "jenkins" explicitly instead of env.USER since env.USER may reflect the system user running Jenkins, which might be root or something else.
+                    sh "sudo usermod -aG docker jenkins || true"
 
                     // Check if Docker is installed; if not, install
                     def dockerCheck = sh(script: "command -v docker || true", returnStdout: true).trim()
                     if (!dockerCheck) {
                         echo "Docker not found, installing Docker..."
-                        sh """
+                        sh '''
                             sudo apt update
                             sudo apt install -y apt-transport-https ca-certificates curl software-properties-common lsb-release gnupg
                             curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor --batch --yes -o /usr/share/keyrings/docker-archive-keyring.gpg
-                            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \$(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
                             sudo apt update
                             sudo apt install -y docker-ce docker-ce-cli containerd.io
                             sudo systemctl enable docker
                             sudo systemctl start docker
-                        """
+                        '''
                     } else {
                         echo "Docker is installed at: ${dockerCheck}"
                     }
@@ -30,15 +31,15 @@ pipeline {
                     def dockerComposeCheck = sh(script: "command -v docker-compose || command -v docker compose || true", returnStdout: true).trim()
                     if (!dockerComposeCheck) {
                         echo "Docker Compose not found, installing Docker Compose..."
-                        sh """
-                            sudo curl -L "https://github.com/docker/compose/releases/download/v2.18.1/docker-compose-\$(uname -s)-\$(uname -m)" -o /usr/local/bin/docker-compose
+                        sh '''
+                            sudo curl -L "https://github.com/docker/compose/releases/download/v2.18.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
                             sudo chmod +x /usr/local/bin/docker-compose
-                        """
+                        '''
                     } else {
                         echo "Docker Compose is installed at: ${dockerComposeCheck}"
                     }
 
-                    // Check if Docker service is running
+                    // Verify Docker is running
                     def dockerServiceStatus = sh(script: "systemctl is-active docker || true", returnStdout: true).trim()
                     if (dockerServiceStatus == "active") {
                         echo "Docker service is running"
@@ -46,12 +47,12 @@ pipeline {
                         error "Docker service is not running."
                     }
 
-                    // Check running Docker Compose services
+                    // Verify Docker Compose services status (ignore permission errors here)
                     def dockerComposeStatus = sh(script: "docker-compose ps || docker compose ps || true", returnStdout: true).trim()
                     if (dockerComposeStatus) {
                         echo "Docker Compose services status:\n${dockerComposeStatus}"
                     } else {
-                        echo "No Docker Compose services running."
+                        echo "No Docker Compose services running or no permission to access Docker socket."
                     }
                 }
             }
