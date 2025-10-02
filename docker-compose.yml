@@ -143,7 +143,7 @@ services:
       SPLUNK_GENERAL_TERMS: "--accept-sgt-current-at-splunk-com"
       SPLUNK_START_ARGS: "--accept-license"
       SPLUNK_PASSWORD: simla@123
-      SPLUNK_FORWARD_SERVER: "3.110.195.161:9997"
+      SPLUNK_FORWARD_SERVER: "13.201.118.174:9997"
       SPLUNK_ADD: "monitor /var/lib/docker/containers"
     volumes:
       - ./uf-config:/opt/splunkforwarder/etc/system/local
