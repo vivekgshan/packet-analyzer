@@ -7,7 +7,6 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # Parser endpoint inside Docker network
-# PARSER_URL = "http://parser-service:5001/parse"
 PARSER_URL = "http://127.0.0.1:5001/parse"
 
 sniffer_obj = None   # ✅ AsyncSniffer handle
@@ -222,13 +221,12 @@ def stop_sniffing():
 
 @app.route("/interfaces", methods=["GET"])
 def list_interfaces():
+    """List host interfaces and map veth/bridge to container/network names"""
     names = list(psutil.net_if_addrs().keys())
-    # ✅ don’t hide docker0/br-/veth → allow container traffic sniffing
-    hide_prefixes = ("vcan", "tun", "tap", "cni", "virbr", "wg")
+    hide_prefixes = ("vcan", "tun", "tap", "cni", "wg")
 
     filtered = [n for n in names if not n.startswith(hide_prefixes)]
 
-    # build container mapping: veth → container name
     iface_labels = {}
     try:
         for c in docker_client.containers.list():
@@ -242,8 +240,12 @@ def list_interfaces():
                     for addr in addrs:
                         if addr.address == cont_ip or addr.address == cont_mac:
                             iface_labels[iface] = cont_name
+        # also label bridges by network ID
+        for net in docker_client.networks.list():
+            bridge_name = f"br-{net.id[:12]}"
+            iface_labels[bridge_name] = f"{net.name} (bridge)"
     except Exception as e:
-        logging.warning(f"⚠️ Failed to map veth → container: {e}")
+        logging.warning(f"⚠️ Failed to map interfaces: {e}")
 
     curated = ["eth0", "ens3", "ens5", "enp39s0", "eno1", "docker0", "lo"]
 
