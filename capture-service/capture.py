@@ -39,11 +39,13 @@ def resolve_container_cached(ip):
         return container_cache[ip]
 
     try:
+        # 🔎 iterate through all running containers and check their network settings
         for c in docker_client.containers.list():
             details = c.attrs
             networks = details.get("NetworkSettings", {}).get("Networks", {})
             for net_name, net_data in networks.items():
-                if net_data.get("IPAddress") == ip:
+                cont_ip = net_data.get("IPAddress")
+                if cont_ip == ip:
                     name = c.name
                     container_cache[ip] = name
                     logging.info(f"🔎 Resolved container {name} for IP {ip}")
@@ -65,11 +67,12 @@ def send_packet(pkt, source="LIVE"):
     src_ip = None
     container_name = None
 
-    if pkt.haslayer("IP"):   # only if IP packet
+    # ✅ Only inspect if IP packet
+    if pkt.haslayer("IP"):
         src_ip = pkt["IP"].src
         container_name = resolve_container_cached(src_ip)
 
-    # If container not detected for this packet, but we already have one for session → reuse
+    # ✅ If container not detected but we already have one for this session → reuse
     if not container_name and session_container:
         container_name = session_container
 
@@ -81,8 +84,8 @@ def send_packet(pkt, source="LIVE"):
         "raw": pkt.summary(),
         "hex": bytes(pkt).hex(),
         "source": source,
-        "src_ip": src_ip,                # ✅ NEW
-        "container": container_name      # ✅ NEW
+        "src_ip": src_ip,                # ✅ include source IP
+        "container": container_name      # ✅ include container name
     }
 
     try:
@@ -98,21 +101,20 @@ def send_packet(pkt, source="LIVE"):
 
 
 def get_default_iface():
-    """Auto-detect the default network interface for outbound traffic."""
     """Detect active default network interface reliably."""
     iface = os.getenv("IFACE")
     if iface:
         logging.info(f"🔧 Using IFACE from env: {iface}")
         return iface
 
-    # find default route interface
+	# find default route interface
     gws = psutil.net_if_stats()
     addrs = psutil.net_if_addrs()
 
     # get routes to check default gateway
     routes = psutil.net_if_stats()
     # psutil doesn't give default gw directly, so use socket trick:
-
+							  
     try:
         # 🔹 Create a temporary UDP socket
         # (UDP is used here because it's connectionless and very lightweight)
@@ -130,35 +132,23 @@ def get_default_iface():
         # 🔹 Log all available interfaces.just printing avaialble inetrfaces
         available = psutil.net_if_addrs()
         logging.info(f"🌐 Available interfaces: {list(available.keys())}")
-        
-        # 🔹 Find the network interface name that owns this local IP
+		# 🔹 Find the network interface name that owns this local IP															  
         for iface, addrs in psutil.net_if_addrs().items():
             for addr in addrs:
                 if addr.address == local_ip:
                     logging.info(f"✅ Default route resolved: {iface} ({local_ip})")
                     return iface
-
     except Exception as e:
         logging.warning(f"⚠️ Could not auto-detect default interface: {e}")
-
     finally:
         s.close()
 
-    # 🔹 Fallbacks in case auto-detect fails
+    # 🔹 fallback
     available = list(psutil.net_if_addrs().keys())
-    logging.info(f"🌐 Available interfaces: {available}")
-
-    # Step 1: Pick the first non-loopback interface
-    # 👉 Loopback ("lo") is the internal-only interface.
-    #    We avoid it if there are real network interfaces available.
     for cand in available:
-        if cand != "lo":  # skip loopback if possible
+        if cand != "lo":
             logging.info(f"🌐 Fallback: using {cand}")
             return cand
-
-    # Step 2: Absolute last resort
-    # 👉 If only "lo" exists (for example in very isolated environments
-    #    or inside some containers), then we must use it.
     logging.warning("⚠️ No external interface found, using loopback 'lo'")
     return "lo"
 
@@ -175,6 +165,8 @@ def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
         iface = iface_override or get_default_iface()
         current_iface = iface
         logging.info(f"🔴 Started sniffing on {iface}...")
+
+        # ✅ sniff traffic from selected interface
         sniff(
             iface=iface,
             prn=lambda pkt: send_packet(pkt, source="LIVE"),
@@ -207,8 +199,8 @@ def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
 @app.route("/start_sniffing", methods=["POST"])
 def start_sniffing():
     global sniff_thread, stop_flag, current_iface, last_error, session_container
-    last_error = None  # reset old error
-    session_container = None  # reset container session when new sniffing starts
+    last_error = None
+    session_container = None  # reset per session
     
     if sniff_thread and sniff_thread.is_alive():
         return jsonify({"status": "already_running"}), 400
@@ -217,12 +209,12 @@ def start_sniffing():
     pcap_file = request.args.get("file")
     iface = request.args.get("iface")
 
-    # validate iface if provided
+    # ✅ validate iface
     if iface:
         available = list(psutil.net_if_addrs().keys())
         if iface not in available:
             logging.error(f"❌ Requested interface '{iface}' not found. Available: {available}")
-            last_error = f"Interface '{iface}' not found"   # ✅ set error
+            last_error = f"Interface '{iface}' not found"
             return jsonify({
                 "error": last_error,
                 "available": available
@@ -239,7 +231,7 @@ def start_sniffing():
             "iface": current_iface
         })
     except Exception as e:
-        last_error = str(e)   # ✅ capture exception as error
+        last_error = str(e)
         logging.error(f"❌ Failed to start sniffer: {e}")
         return jsonify({"error": last_error}), 500
 
@@ -252,23 +244,21 @@ def stop_sniffing():
     return jsonify({"status": "sniffing_stopped"})
 
 
-									  
 @app.route("/interfaces", methods=["GET"])
 def list_interfaces():
     names = list(psutil.net_if_addrs().keys())
-    hide_prefixes = ("docker", "br-", "veth", "vcan", "tun", "tap", "cni", "virbr", "wg")
+    hide_prefixes = ("veth", "vcan", "tun", "tap", "cni", "virbr", "wg")
 
-    # filter out hidden/virtual interfaces
+    # ✅ do not hide docker0/br-xxx so you can sniff container traffic
     filtered = [n for n in names if not n.startswith(hide_prefixes)]
 
     curated = [
         "eth0", "eth1", "ens3", "ens4", "ens5", "ens6", "ens7", "ens8",
         "enp0s3", "enp0s8", "enp1s0", "enp2s0", "enp3s0", "enp39s0",
-        "eno1", "eno2", "bond0", "en0", "en1", "awdl0", "bridge0",
-        "wlan0", "wlp1s0", "wlp2s0", "wlp3s0", "wlp4s0", "lo"
+        "eno1", "eno2", "bond0", "en0", "en1", "bridge0", "docker0",
+        "wlan0", "lo"
     ]
 
-    # merge curated + filtered names, then deduplicate and sort
     merged = sorted(dict.fromkeys(curated + filtered))
     return jsonify({"interfaces": merged})
 
@@ -285,7 +275,6 @@ def status():
         "last_src_ip": last_src_ip,
         "last_container": last_container
     })
-
 
 
 @app.route("/", methods=["GET"])
