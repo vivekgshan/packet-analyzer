@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
-from scapy.all import sniff, rdpcap, get_if_list
+from scapy.all import AsyncSniffer, rdpcap, get_if_list
 from scapy.utils import PcapReader
-import requests, time, os, threading, logging, psutil, socket, docker  # ✅ added docker
+import requests, time, os, threading, logging, psutil, socket, docker
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -10,10 +10,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # PARSER_URL = "http://parser-service:5001/parse"
 PARSER_URL = "http://127.0.0.1:5001/parse"
 
-sniff_thread = None
-stop_flag = False
+sniffer_obj = None   # ✅ AsyncSniffer handle
 current_iface = None
-last_error = None 
+last_error = None
 
 # For rate-limited logging
 packet_count = 0
@@ -39,7 +38,6 @@ def resolve_container_cached(ip):
         return container_cache[ip]
 
     try:
-        # 🔎 iterate through all running containers and check their network settings
         for c in docker_client.containers.list():
             details = c.attrs
             networks = details.get("NetworkSettings", {}).get("Networks", {})
@@ -58,7 +56,6 @@ def resolve_container_cached(ip):
     return None
 
 
-
 def send_packet(pkt, source="LIVE"):
     """Send packet data to parser service with rate-limited logging"""
     global packet_count, last_log_time, last_src_ip, last_container, session_container
@@ -67,12 +64,16 @@ def send_packet(pkt, source="LIVE"):
     src_ip = None
     container_name = None
 
-    # ✅ Only inspect if IP packet
-    if pkt.haslayer("IP"):
+    if pkt.haslayer("IP"):   # only if IP packet
         src_ip = pkt["IP"].src
+        logging.debug(f"🕵️ Packet src_ip={src_ip}")
         container_name = resolve_container_cached(src_ip)
 
-    # ✅ If container not detected but we already have one for this session → reuse
+        # ✅ fallback: check destination IP too
+        if not container_name and pkt["IP"].dst:
+            container_name = resolve_container_cached(pkt["IP"].dst)
+
+    # If container not detected for this packet, but we already have one for session → reuse
     if not container_name and session_container:
         container_name = session_container
 
@@ -84,8 +85,8 @@ def send_packet(pkt, source="LIVE"):
         "raw": pkt.summary(),
         "hex": bytes(pkt).hex(),
         "source": source,
-        "src_ip": src_ip,                # ✅ include source IP
-        "container": container_name      # ✅ include container name
+        "src_ip": src_ip,                # ✅ NEW
+        "container": container_name      # ✅ NEW
     }
 
     try:
@@ -99,7 +100,6 @@ def send_packet(pkt, source="LIVE"):
         logging.error(f"❌ Error sending to parser: {e}")
 
 
-
 def get_default_iface():
     """Detect active default network interface reliably."""
     iface = os.getenv("IFACE")
@@ -107,32 +107,12 @@ def get_default_iface():
         logging.info(f"🔧 Using IFACE from env: {iface}")
         return iface
 
-	# find default route interface
-    gws = psutil.net_if_stats()
-    addrs = psutil.net_if_addrs()
-
-    # get routes to check default gateway
-    routes = psutil.net_if_stats()
-    # psutil doesn't give default gw directly, so use socket trick:
-							  
     try:
-        # 🔹 Create a temporary UDP socket
-        # (UDP is used here because it's connectionless and very lightweight)
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-        # 🔹 "Connect" to 8.8.8.8:80 (Google DNS)
-        # 👉 Important: no packets are actually sent!
-        # This only asks the kernel:
-        #   "If I wanted to reach 8.8.8.8:80, which local IP/interface would I use?"
         s.connect(("8.8.8.8", 80))
-
-        # 🔹 Get the local IP address the OS chose
         local_ip = s.getsockname()[0]
-
-        # 🔹 Log all available interfaces.just printing avaialble inetrfaces
         available = psutil.net_if_addrs()
         logging.info(f"🌐 Available interfaces: {list(available.keys())}")
-		# 🔹 Find the network interface name that owns this local IP															  
         for iface, addrs in psutil.net_if_addrs().items():
             for addr in addrs:
                 if addr.address == local_ip:
@@ -143,7 +123,6 @@ def get_default_iface():
     finally:
         s.close()
 
-    # 🔹 fallback
     available = list(psutil.net_if_addrs().keys())
     for cand in available:
         if cand != "lo":
@@ -153,10 +132,9 @@ def get_default_iface():
     return "lo"
 
 
-
 def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
-    global stop_flag, packet_count, last_log_time, current_iface
-    stop_flag = False
+    """Start AsyncSniffer or replay from PCAP"""
+    global packet_count, last_log_time, current_iface, sniffer_obj
     packet_count = 0
     last_log_time = time.time()
     time.sleep(2)
@@ -166,14 +144,12 @@ def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
         current_iface = iface
         logging.info(f"🔴 Started sniffing on {iface}...")
 
-        # ✅ sniff traffic from selected interface
-        sniff(
+        sniffer_obj = AsyncSniffer(
             iface=iface,
             prn=lambda pkt: send_packet(pkt, source="LIVE"),
-            store=False,
-            stop_filter=lambda pkt: stop_flag
+            store=False
         )
-        logging.info("🛑 Sniffing stopped (LIVE mode).")
+        sniffer_obj.start()
 
     else:
         file_to_read = pcap_file or "sample-pcaps/dns.cap"
@@ -190,26 +166,24 @@ def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
 
         logging.info(f"✅ Loaded {len(packets)} packets from {file_to_read}")
         for pkt in packets:
-            if stop_flag:
-                break
             send_packet(pkt, source="PCAP")
         logging.info("🎉 Finished sending all packets from PCAP.")
 
 
 @app.route("/start_sniffing", methods=["POST"])
 def start_sniffing():
-    global sniff_thread, stop_flag, current_iface, last_error, session_container
+    global last_error, session_container, sniffer_obj
     last_error = None
-    session_container = None  # reset per session
-    
-    if sniff_thread and sniff_thread.is_alive():
+    session_container = None  # reset container session when new sniffing starts
+
+    if sniffer_obj and sniffer_obj.running:
         return jsonify({"status": "already_running"}), 400
 
     mode = request.args.get("mode", "LIVE")
     pcap_file = request.args.get("file")
     iface = request.args.get("iface")
 
-    # ✅ validate iface
+    # validate iface if provided
     if iface:
         available = list(psutil.net_if_addrs().keys())
         if iface not in available:
@@ -220,15 +194,13 @@ def start_sniffing():
                 "available": available
             }), 400
 
-    current_iface = iface or (get_default_iface() if mode.upper() == "LIVE" else None)
-
     try:
-        sniff_thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
-        sniff_thread.start()
+        thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
+        thread.start()
         return jsonify({
             "status": f"sniffing_started_{mode}",
             "pcap": pcap_file,
-            "iface": current_iface
+            "iface": iface or current_iface
         })
     except Exception as e:
         last_error = str(e)
@@ -238,25 +210,26 @@ def start_sniffing():
 
 @app.route("/stop_sniffing", methods=["POST"])
 def stop_sniffing():
-    global stop_flag
-    stop_flag = True
-    logging.info("🛑 Stop request received — stopping sniffer...")
+    global sniffer_obj
+    if sniffer_obj and sniffer_obj.running:
+        sniffer_obj.stop()
+        sniffer_obj = None
+        logging.info("🛑 Sniffer stopped successfully.")
+    else:
+        logging.info("ℹ️ No sniffer running.")
     return jsonify({"status": "sniffing_stopped"})
 
 
 @app.route("/interfaces", methods=["GET"])
 def list_interfaces():
     names = list(psutil.net_if_addrs().keys())
-    hide_prefixes = ("veth", "vcan", "tun", "tap", "cni", "virbr", "wg")
+    # ✅ don’t hide docker0/br-/veth → allow container traffic sniffing
+    hide_prefixes = ("vcan", "tun", "tap", "cni", "virbr", "wg")
 
-    # ✅ do not hide docker0/br-xxx so you can sniff container traffic
     filtered = [n for n in names if not n.startswith(hide_prefixes)]
 
     curated = [
-        "eth0", "eth1", "ens3", "ens4", "ens5", "ens6", "ens7", "ens8",
-        "enp0s3", "enp0s8", "enp1s0", "enp2s0", "enp3s0", "enp39s0",
-        "eno1", "eno2", "bond0", "en0", "en1", "bridge0", "docker0",
-        "wlan0", "lo"
+        "eth0", "ens3", "ens5", "enp39s0", "eno1", "docker0", "lo"
     ]
 
     merged = sorted(dict.fromkeys(curated + filtered))
@@ -266,8 +239,8 @@ def list_interfaces():
 @app.route("/status", methods=["GET"])
 def status():
     """Return sniffing status + interface + last seen src_ip/container"""
-    global last_error, last_src_ip, last_container
-    is_running = sniff_thread and sniff_thread.is_alive()
+    global last_error, last_src_ip, last_container, sniffer_obj
+    is_running = sniffer_obj and sniffer_obj.running
     return jsonify({
         "running": is_running,
         "iface": current_iface if is_running else None,
