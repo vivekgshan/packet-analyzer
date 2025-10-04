@@ -221,7 +221,8 @@ def stop_sniffing():
 
 @app.route("/interfaces", methods=["GET"])
 def list_interfaces():
-    """List host interfaces and map veth/bridge to container/network names"""
+    """List host interfaces and map veth/bridge to container/network names.
+       Return as objects {name, label} so UI can show pretty label but use raw name."""
     names = list(psutil.net_if_addrs().keys())
     hide_prefixes = ("vcan", "tun", "tap", "cni", "wg")
 
@@ -229,6 +230,7 @@ def list_interfaces():
 
     iface_labels = {}
     try:
+        # Map container IPs/MACs to host interfaces
         for c in docker_client.containers.list():
             details = c.attrs
             networks = details.get("NetworkSettings", {}).get("Networks", {})
@@ -240,7 +242,7 @@ def list_interfaces():
                     for addr in addrs:
                         if addr.address == cont_ip or addr.address == cont_mac:
                             iface_labels[iface] = cont_name
-        # also label bridges by network ID
+        # Label bridges by network ID
         for net in docker_client.networks.list():
             bridge_name = f"br-{net.id[:12]}"
             iface_labels[bridge_name] = f"{net.name} (bridge)"
@@ -248,15 +250,13 @@ def list_interfaces():
         logging.warning(f"⚠️ Failed to map interfaces: {e}")
 
     curated = ["eth0", "ens3", "ens5", "enp39s0", "eno1", "docker0", "lo"]
-
     merged = sorted(dict.fromkeys(curated + filtered))
 
     final = []
     for iface in merged:
-        if iface in iface_labels:
-            final.append(f"{iface} ({iface_labels[iface]})")
-        else:
-            final.append(iface)
+        label = iface_labels.get(iface, "")
+        pretty = f"{iface} ({label})" if label else iface
+        final.append({"name": iface, "label": pretty})
 
     return jsonify({"interfaces": final})
 
