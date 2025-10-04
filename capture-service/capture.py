@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from scapy.all import AsyncSniffer, rdpcap, get_if_list
+from scapy.all import AsyncSniffer, rdpcap
 from scapy.utils import PcapReader
 import requests, time, os, threading, logging, psutil, socket, docker
 
@@ -85,8 +85,8 @@ def send_packet(pkt, source="LIVE"):
         "raw": pkt.summary(),
         "hex": bytes(pkt).hex(),
         "source": source,
-        "src_ip": src_ip,                # ✅ NEW
-        "container": container_name      # ✅ NEW
+        "src_ip": src_ip,
+        "container": container_name
     }
 
     try:
@@ -228,12 +228,35 @@ def list_interfaces():
 
     filtered = [n for n in names if not n.startswith(hide_prefixes)]
 
-    curated = [
-        "eth0", "ens3", "ens5", "enp39s0", "eno1", "docker0", "lo"
-    ]
+    # build container mapping: veth → container name
+    iface_labels = {}
+    try:
+        for c in docker_client.containers.list():
+            details = c.attrs
+            networks = details.get("NetworkSettings", {}).get("Networks", {})
+            for net_name, net_data in networks.items():
+                cont_ip = net_data.get("IPAddress")
+                cont_mac = net_data.get("MacAddress")
+                cont_name = c.name
+                for iface, addrs in psutil.net_if_addrs().items():
+                    for addr in addrs:
+                        if addr.address == cont_ip or addr.address == cont_mac:
+                            iface_labels[iface] = cont_name
+    except Exception as e:
+        logging.warning(f"⚠️ Failed to map veth → container: {e}")
+
+    curated = ["eth0", "ens3", "ens5", "enp39s0", "eno1", "docker0", "lo"]
 
     merged = sorted(dict.fromkeys(curated + filtered))
-    return jsonify({"interfaces": merged})
+
+    final = []
+    for iface in merged:
+        if iface in iface_labels:
+            final.append(f"{iface} ({iface_labels[iface]})")
+        else:
+            final.append(iface)
+
+    return jsonify({"interfaces": final})
 
 
 @app.route("/status", methods=["GET"])
@@ -254,7 +277,7 @@ def status():
 def root():
     return jsonify({
         "status": "capture-service running",
-        "available_endpoints": ["/health", "/start_sniffing", "/stop_sniffing", "/status"]
+        "available_endpoints": ["/health", "/start_sniffing", "/stop_sniffing", "/status", "/interfaces"]
     })
 
 
