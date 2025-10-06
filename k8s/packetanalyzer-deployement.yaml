@@ -3,19 +3,7 @@ kind: Namespace
 metadata:
   name: packetanalyzer
 ---
-# PostgreSQL
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-pvc
-  namespace: packetanalyzer
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
----
+# ================== PostgreSQL DB ==================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,6 +22,8 @@ spec:
       containers:
         - name: db
           image: postgres:15
+          ports:
+            - containerPort: 5432
           env:
             - name: POSTGRES_USER
               value: packetuser
@@ -41,15 +31,12 @@ spec:
               value: packetpass
             - name: POSTGRES_DB
               value: packetdb
-          ports:
-            - containerPort: 5432
           volumeMounts:
-            - name: postgres-storage
+            - name: db-storage
               mountPath: /var/lib/postgresql/data
       volumes:
-        - name: postgres-storage
-          persistentVolumeClaim:
-            claimName: postgres-pvc
+        - name: db-storage
+          emptyDir: {}   # ✅ Use PVC for production
 ---
 apiVersion: v1
 kind: Service
@@ -57,13 +44,13 @@ metadata:
   name: db
   namespace: packetanalyzer
 spec:
-  selector:
-    app: db
   ports:
     - port: 5432
       targetPort: 5432
+  selector:
+    app: db
 ---
-# pgAdmin
+# ================== PGAdmin ==================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -82,13 +69,13 @@ spec:
       containers:
         - name: pgadmin
           image: dpage/pgadmin4
+          ports:
+            - containerPort: 80
           env:
             - name: PGADMIN_DEFAULT_EMAIL
               value: admin@admin.com
             - name: PGADMIN_DEFAULT_PASSWORD
               value: admin
-          ports:
-            - containerPort: 80
 ---
 apiVersion: v1
 kind: Service
@@ -96,15 +83,14 @@ metadata:
   name: pgadmin
   namespace: packetanalyzer
 spec:
-  type: NodePort
+  type: LoadBalancer
+  ports:
+    - port: 5050
+      targetPort: 80
   selector:
     app: pgadmin
-  ports:
-    - port: 80
-      targetPort: 80
-      nodePort: 30550
 ---
-# Persistor
+# ================== Persistor Service ==================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -123,13 +109,13 @@ spec:
       containers:
         - name: persistor-service
           image: ramanji9550/persistor-service:latest
+          ports:
+            - containerPort: 5002
           env:
             - name: SERVICE_PORT
               value: "5002"
             - name: DATABASE_URL
               value: "postgresql://packetuser:packetpass@db:5432/packetdb"
-          ports:
-            - containerPort: 5002
 ---
 apiVersion: v1
 kind: Service
@@ -137,13 +123,13 @@ metadata:
   name: persistor-service
   namespace: packetanalyzer
 spec:
-  selector:
-    app: persistor-service
   ports:
     - port: 5002
       targetPort: 5002
+  selector:
+    app: persistor-service
 ---
-# Parser
+# ================== Parser Service ==================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -162,13 +148,13 @@ spec:
       containers:
         - name: parser-service
           image: ramanji9550/parser-service:latest
+          ports:
+            - containerPort: 5001
           env:
             - name: SERVICE_PORT
               value: "5001"
             - name: DATABASE_URL
               value: "postgresql://packetuser:packetpass@db:5432/packetdb"
-          ports:
-            - containerPort: 5001
 ---
 apiVersion: v1
 kind: Service
@@ -176,13 +162,13 @@ metadata:
   name: parser-service
   namespace: packetanalyzer
 spec:
-  selector:
-    app: parser-service
   ports:
     - port: 5001
       targetPort: 5001
+  selector:
+    app: parser-service
 ---
-# Analyzer
+# ================== Analyzer Service ==================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -201,13 +187,13 @@ spec:
       containers:
         - name: analyzer-service
           image: ramanji9550/analyzer-service:latest
+          ports:
+            - containerPort: 5003
           env:
             - name: SERVICE_PORT
               value: "5003"
             - name: DATABASE_URL
               value: "postgresql://packetuser:packetpass@db:5432/packetdb"
-          ports:
-            - containerPort: 5003
 ---
 apiVersion: v1
 kind: Service
@@ -215,13 +201,13 @@ metadata:
   name: analyzer-service
   namespace: packetanalyzer
 spec:
-  selector:
-    app: analyzer-service
   ports:
     - port: 5003
       targetPort: 5003
+  selector:
+    app: analyzer-service
 ---
-# UI
+# ================== UI Service ==================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -240,6 +226,8 @@ spec:
       containers:
         - name: ui-service
           image: ramanji9550/ui-service:latest
+          ports:
+            - containerPort: 5000
           env:
             - name: SERVICE_PORT
               value: "5000"
@@ -247,8 +235,6 @@ spec:
               value: "http://analyzer-service:5003"
             - name: CAPTURE_URL
               value: "http://capture-service:5004"
-          ports:
-            - containerPort: 5000
 ---
 apiVersion: v1
 kind: Service
@@ -256,15 +242,14 @@ metadata:
   name: ui-service
   namespace: packetanalyzer
 spec:
-  type: NodePort
-  selector:
-    app: ui-service
+  type: LoadBalancer
   ports:
     - port: 5000
       targetPort: 5000
-      nodePort: 32000
+  selector:
+    app: ui-service
 ---
-# Capture
+# ================== Capture Service ==================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -280,22 +265,25 @@ spec:
       labels:
         app: capture-service
     spec:
-      hostNetwork: true
       containers:
         - name: capture-service
           image: ramanji9550/capture-service:latest
           ports:
             - containerPort: 5004
-          securityContext:
+          env:
+            - name: SERVICE_PORT
+              value: "5004"
+          securityContext:     # ✅ needed for sniffing
             capabilities:
               add: ["NET_ADMIN", "NET_RAW"]
           volumeMounts:
-            - name: dockersock
-              mountPath: /var/run/docker.sock
+            - mountPath: /var/run/docker.sock
+              name: docker-sock
       volumes:
-        - name: dockersock
+        - name: docker-sock
           hostPath:
             path: /var/run/docker.sock
+            type: Socket
 ---
 apiVersion: v1
 kind: Service
@@ -303,8 +291,8 @@ metadata:
   name: capture-service
   namespace: packetanalyzer
 spec:
-  selector:
-    app: capture-service
   ports:
     - port: 5004
       targetPort: 5004
+  selector:
+    app: capture-service
