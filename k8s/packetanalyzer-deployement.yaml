@@ -42,6 +42,8 @@ spec:
           value: packetpass
         - name: POSTGRES_DB
           value: packetdb
+        - name: PGDATA                # ✅ tell Postgres to use a subdirectory
+          value: /var/lib/postgresql/data/pgdata
         ports:
         - containerPort: 5432
         volumeMounts:
