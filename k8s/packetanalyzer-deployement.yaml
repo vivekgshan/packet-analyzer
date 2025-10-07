@@ -243,7 +243,7 @@ spec:
         env:
         - name: SERVICE_PORT
           value: "5000"
-		- name: ANALYZER_URL
+        - name: ANALYZER_URL
           value: "http://analyzer-service:5003"
         - name: CAPTURE_URL
           value: "http://capture-service:5004"
