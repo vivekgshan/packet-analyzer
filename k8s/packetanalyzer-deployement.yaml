@@ -170,6 +170,8 @@ spec:
           value: "5001"
         - name: DATABASE_URL
           value: "postgresql://packetuser:packetpass@db:5432/packetdb"
+        - name: PERSISTOR_URL
+          value: "http://persistor-service:5002"   # ✅ Added for K8s
         ports:
         - containerPort: 5001
 ---
