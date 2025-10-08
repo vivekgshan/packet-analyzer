@@ -294,7 +294,7 @@ spec:
         - name: SERVICE_PORT
           value: "5004"
         - name: PARSER_URL
-          value: "http://parser-service:5001"
+          value: "http://parser-service:5001/parse"
         securityContext:
           privileged: true
           capabilities:
