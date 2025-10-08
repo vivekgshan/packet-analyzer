@@ -42,7 +42,7 @@ spec:
           value: packetpass
         - name: POSTGRES_DB
           value: packetdb
-        - name: PGDATA                # ✅ tell Postgres to use a subdirectory
+		- name: PGDATA                # ✅ tell Postgres to use a subdirectory
           value: /var/lib/postgresql/data/pgdata
         ports:
         - containerPort: 5432
@@ -129,7 +129,7 @@ spec:
         - name: SERVICE_PORT
           value: "5002"
         - name: DATABASE_URL
-          value: postgresql://packetuser:packetpass@db:5432/packetdb
+          value: "postgresql://packetuser:packetpass@db:5432/packetdb"
         ports:
         - containerPort: 5002
 ---
@@ -168,7 +168,7 @@ spec:
         - name: SERVICE_PORT
           value: "5001"
         - name: DATABASE_URL
-          value: postgresql://packetuser:packetpass@db:5432/packetdb
+          value: "postgresql://packetuser:packetpass@db:5432/packetdb"
         ports:
         - containerPort: 5001
 ---
@@ -207,7 +207,7 @@ spec:
         - name: SERVICE_PORT
           value: "5003"
         - name: DATABASE_URL
-          value: postgresql://packetuser:packetpass@db:5432/packetdb
+          value: "postgresql://packetuser:packetpass@db:5432/packetdb"
         ports:
         - containerPort: 5003
 ---
