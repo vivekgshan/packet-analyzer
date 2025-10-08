@@ -1,3 +1,4 @@
+
 # -------------------- NAMESPACE --------------------
 apiVersion: v1
 kind: Namespace
@@ -271,8 +272,6 @@ kind: DaemonSet
 metadata:
   name: capture-service
   namespace: packetanalyzer
-  labels:
-    app: capture-service
 spec:
   selector:
     matchLabels:
@@ -282,23 +281,32 @@ spec:
       labels:
         app: capture-service
     spec:
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
+      hostNetwork: true                        # ✅ Capture host + pod traffic
+      dnsPolicy: ClusterFirstWithHostNet       # ✅ Fix DNS with hostNetwork
       containers:
       - name: capture-service
         image: ramanji9550/capture-service:latest
         ports:
         - containerPort: 5004
-        securityContext:
-          capabilities:
-            add: ["NET_ADMIN", "NET_RAW"]
         env:
         - name: SERVICE_PORT
           value: "5004"
         - name: PARSER_URL
-          value: "http://parser-service:5001/parse"
-        - name: RUNTIME
-          value: "k8s"
+          value: "http://parser-service:5001"
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+              - NET_ADMIN
+              - NET_RAW
+        volumeMounts:
+        - name: host-dev
+          mountPath: /dev                      # ✅ access NIC devices
+      volumes:
+      - name: host-dev
+        hostPath:
+          path: /dev
+
 ---
 apiVersion: v1
 kind: Service
