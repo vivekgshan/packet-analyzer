@@ -37,17 +37,15 @@ spec:
         image: postgres:15
         env:
         - name: POSTGRES_USER
-          value: packetuser
+          value: "packetuser"
         - name: POSTGRES_PASSWORD
-          value: packetpass
+          value: "packetpass"
         - name: POSTGRES_DB
-          value: packetdb
-		- name: PGDATA                # ✅ tell Postgres to use a subdirectory
-          value: /var/lib/postgresql/data/pgdata
+          value: "packetdb"
         ports:
         - containerPort: 5432
         volumeMounts:
-        - mountPath: /var/lib/postgresql/data
+        - mountPath: /var/lib/postgresql/data/pgdata
           name: postgres-storage
       volumes:
       - name: postgres-storage
@@ -87,9 +85,9 @@ spec:
         image: dpage/pgadmin4
         env:
         - name: PGADMIN_DEFAULT_EMAIL
-          value: admin@admin.com
+          value: "admin@admin.com"
         - name: PGADMIN_DEFAULT_PASSWORD
-          value: admin
+          value: "admin"
         ports:
         - containerPort: 80
 ---
