@@ -287,16 +287,22 @@ spec:
       containers:
       - name: capture-service
         image: ramanji9550/capture-service:latest
+        securityContext:
+          privileged: true
         ports:
         - containerPort: 5004
-        securityContext:
-          capabilities:
-            add: ["NET_ADMIN", "NET_RAW"]
+        volumeMounts:
+        - name: docker-sock
+          mountPath: /var/run/docker.sock
         env:
         - name: SERVICE_PORT
           value: "5004"
         - name: PARSER_URL
           value: "http://parser-service:5001/parse"
+      volumes:
+      - name: docker-sock
+        hostPath:
+          path: /var/run/docker.sock
 ---
 apiVersion: v1
 kind: Service
