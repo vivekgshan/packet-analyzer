@@ -283,8 +283,8 @@ spec:
       labels:
         app: capture-service
     spec:
-      hostNetwork: true                        # ✅ Capture host + pod traffic
-      dnsPolicy: ClusterFirstWithHostNet       # ✅ Fix DNS with hostNetwork
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: capture-service
         image: ramanji9550/capture-service:latest
@@ -294,20 +294,27 @@ spec:
         - name: SERVICE_PORT
           value: "5004"
         - name: PARSER_URL
-          value: "http://parser-service:5001/parse"
+          value: "http://parser-service:5001"
         securityContext:
           privileged: true
+          allowPrivilegeEscalation: true
           capabilities:
             add:
               - NET_ADMIN
               - NET_RAW
         volumeMounts:
         - name: host-dev
-          mountPath: /dev                      # ✅ access NIC devices
+          mountPath: /dev
+        - name: host-net
+          mountPath: /sys/class/net
       volumes:
       - name: host-dev
         hostPath:
           path: /dev
+      - name: host-net
+        hostPath:
+          path: /sys/class/net
+
 
 ---
 apiVersion: v1
