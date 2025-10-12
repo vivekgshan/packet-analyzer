@@ -119,27 +119,30 @@ def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
 # -------------------------------------------------------
 @app.route("/start_sniffing", methods=["POST"])
 def start_sniffing():
-    global sniffer_obj
+    global sniffer_obj, current_iface
 
-    if sniffer_obj and sniffer_obj.running:
-        return jsonify({"status": "already_running"}), 400
+    # Check if sniffer already active
+    if sniffer_obj and getattr(sniffer_obj, "running", False):
+        logging.warning("⚠️ Sniffer already running, ignoring duplicate start")
+        return jsonify({"status": "already_running"}), 200
 
+    # Get parameters
     mode = request.args.get("mode", "LIVE")
-    iface = request.args.get("iface", "auto")
+    iface = request.args.get("iface", current_iface)
     pcap_file = request.args.get("file")
 
+    # Validate interface exists
+    import psutil
+    valid_ifaces = psutil.net_if_addrs().keys()
+    if iface not in valid_ifaces:
+        logging.warning(f"⚠️ Interface {iface} not found, defaulting to {current_iface}")
+        iface = current_iface
+
+    logging.info(f"🚀 Starting sniffing on iface={iface} mode={mode}")
     try:
-        # Auto-detect interface
-        if iface == "auto":
-            iface = detect_best_interface()
-
-        logging.info(f"🔴 Starting LIVE sniffing on {iface}")
-        thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
-        thread.daemon = True
-        thread.start()
-
+        sniffer_obj = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
+        sniffer_obj.start()
         return jsonify({"status": "sniffing_started", "iface": iface}), 200
-
     except Exception as e:
         logging.error(f"❌ Error starting sniffer: {e}")
         return jsonify({"error": str(e)}), 500
