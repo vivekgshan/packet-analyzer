@@ -109,22 +109,29 @@ def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
 @app.route("/start_sniffing", methods=["POST"])
 def start_sniffing():
     global sniffer_obj
+
     if sniffer_obj and sniffer_obj.running:
         return jsonify({"status": "already_running"}), 400
 
     mode = request.args.get("mode", "LIVE")
-    iface = request.args.get("iface")
+    iface = request.args.get("iface", "auto")
     pcap_file = request.args.get("file")
 
     try:
+        # Auto-detect interface
+        if iface == "auto":
+            iface = detect_best_interface()
+
+        logging.info(f"🔴 Starting LIVE sniffing on {iface}")
         thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
+        thread.daemon = True
         thread.start()
-        return jsonify({"status": "sniffing_started", "iface": iface or current_iface})
+
+        return jsonify({"status": "sniffing_started", "iface": iface}), 200
+
     except Exception as e:
         logging.error(f"❌ Error starting sniffer: {e}")
         return jsonify({"error": str(e)}), 500
-
-@app.route("/stop_sniffing", methods=["POST"])
 def stop_sniffing():
     global sniffer_obj
     if sniffer_obj and sniffer_obj.running:
