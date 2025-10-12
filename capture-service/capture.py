@@ -22,43 +22,44 @@ packet_count, last_log_time = 0, time.time()
 # -------------------------------------------------------
 # Interface auto-detection logic
 # -------------------------------------------------------
-import psutil, socket, logging
+import psutil, socket, os, logging
 
 def get_best_iface():
     """
-    Auto-detect the best interface (host or pod):
-    ✅ Works for Docker, EC2, Azure AKS DaemonSet
-    ✅ Prefers physical NICs (en*, eth1+, enP*, ens*, eno*)
-    ✅ Includes Azure private 10.x ranges
+    Detect the best network interface:
+    - Works for Docker, Compose, and Kubernetes (DaemonSet on hostNetwork)
+    - Uses both psutil and /host-net (mounted hostPath)
     """
     try:
         ifaces = list(psutil.net_if_addrs().keys())
-        logging.info(f"🔍 Interfaces detected: {ifaces}")
+        logging.info(f"🔍 Interfaces detected inside container: {ifaces}")
 
-        # Filter out purely virtual or loopback
-        filtered = [i for i in ifaces if not i.startswith(("lo", "docker", "veth", "cni", "azv"))]
-
-        # Prioritize physical NIC patterns
-        preferred = [i for i in filtered if i.lower().startswith(("en", "eth1", "eno", "ens"))]
-
-        # Examine each interface for a valid IPv4 address
-        for iface in preferred + filtered:
+        # Prefer visible physical-like NICs
+        preferred = [i for i in ifaces if i.lower().startswith(("en", "eth1", "eno", "ens"))]
+        for iface in preferred + ifaces:
             addrs = psutil.net_if_addrs().get(iface, [])
             for addr in addrs:
-                if addr.family == socket.AF_INET:
-                    ip = addr.address
-                    if not ip.startswith(("127.")):  # exclude only loopback
-                        logging.info(f"🧠 Selected active NIC: {iface} ({ip})")
-                        return iface
+                if addr.family == socket.AF_INET and not addr.address.startswith("127."):
+                    logging.info(f"🧠 Selected in-container NIC: {iface} ({addr.address})")
+                    return iface
 
-        # fallback if nothing found
-        if filtered:
-            logging.info(f"⚙️ Using fallback NIC: {filtered[0]}")
-            return filtered[0]
+        # 🧩 Fallback: try mounted host /sys/class/net
+        host_net_path = "/host-net"
+        if os.path.exists(host_net_path):
+            host_ifaces = [i for i in os.listdir(host_net_path)
+                           if not i.startswith(("lo", "veth", "docker", "cni", "azv"))]
+            logging.info(f"🌐 Host interfaces from /host-net: {host_ifaces}")
+            for iface in host_ifaces:
+                if iface.lower().startswith(("en", "ens", "eno", "eth1")):
+                    logging.info(f"🧠 Selected host NIC: {iface}")
+                    return iface
+
+        logging.info("⚙️ No physical NICs found; using eth0 fallback.")
     except Exception as e:
         logging.warning(f"⚠️ Interface auto-detect failed: {e}")
 
     return "eth0"
+
 
 
 # -------------------------------------------------------
