@@ -274,6 +274,8 @@ kind: DaemonSet
 metadata:
   name: capture-service
   namespace: packetanalyzer
+  labels:
+    app: capture-service
 spec:
   selector:
     matchLabels:
@@ -283,11 +285,14 @@ spec:
       labels:
         app: capture-service
     spec:
+      # ✅ Allow pod to sniff all host + pod traffic
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+
       containers:
       - name: capture-service
         image: ramanji9550/capture-service:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 5004
         env:
@@ -295,6 +300,8 @@ spec:
           value: "5004"
         - name: PARSER_URL
           value: "http://parser-service:5001"
+        - name: RUNTIME
+          value: "k8s"      # used to differentiate from docker-compose
         securityContext:
           privileged: true
           allowPrivilegeEscalation: true
@@ -302,29 +309,49 @@ spec:
             add:
               - NET_ADMIN
               - NET_RAW
+
         volumeMounts:
-        - name: host-dev
-          mountPath: /dev
-        - name: host-net
-          mountPath: /sys/class/net
+          # Access host's NIC and device interfaces
+          - name: host-dev
+            mountPath: /dev
+          # Access host NIC metadata (interface names)
+          - name: host-sys
+            mountPath: /sys
+          # Optional: mount /proc for more visibility
+          - name: host-proc
+            mountPath: /host_proc
+            readOnly: true
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5004
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+      # 🧩 Volumes to expose host network devices & metadata
       volumes:
       - name: host-dev
         hostPath:
           path: /dev
-      - name: host-net
+      - name: host-sys
         hostPath:
-          path: /sys/class/net
-
-
+          path: /sys
+      - name: host-proc
+        hostPath:
+          path: /proc
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: capture-service
   namespace: packetanalyzer
+  labels:
+    app: capture-service
 spec:
   selector:
     app: capture-service
   ports:
-  - port: 5004
+  - name: http
+    port: 5004
     targetPort: 5004
