@@ -274,8 +274,6 @@ kind: DaemonSet
 metadata:
   name: capture-service
   namespace: packetanalyzer
-  labels:
-    app: capture-service
 spec:
   selector:
     matchLabels:
@@ -285,51 +283,34 @@ spec:
       labels:
         app: capture-service
     spec:
-      # ✅ Allow access to host interfaces & network
       hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
-
+      dnsPolicy: ClusterFirstWithHostNet  # 👈 Important line
       containers:
-      - name: capture-service
-        image: ramanji9550/capture-service:latest
-        imagePullPolicy: Always
-        ports:
-          - containerPort: 5004
-        env:
-          - name: SERVICE_PORT
-            value: "5004"
-          - name: PARSER_URL
-            value: "http://parser-service:5001"
-        securityContext:
-          privileged: true
-          allowPrivilegeEscalation: true
-          capabilities:
-            add:
-              - NET_ADMIN
-              - NET_RAW
-
-        # ✅ Mount host NIC & device directories
-        volumeMounts:
-          - name: host-net
-            mountPath: /host-net
-          - name: host-dev
-            mountPath: /dev
-
-        # ✅ Optional: small startup command to print detected host NIC before Flask runs
-        command: ["/bin/sh", "-c"]
-        args:
-          - |
-            echo "🔍 Available host interfaces:"; ls /host-net;
-            echo "🚀 Starting capture-service..."; 
-            python3 /app/capture.py
-
+        - name: capture-service
+          image: ramanji9550/capture-service:latest
+          ports:
+            - containerPort: 5004
+          env:
+            - name: SERVICE_PORT
+              value: "5004"
+            - name: PARSER_URL
+              value: "http://parser-service.packetanalyzer.svc.cluster.local:5001"
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["NET_ADMIN", "NET_RAW"]
+          volumeMounts:
+            - mountPath: /dev
+              name: host-dev
+            - mountPath: /sys/class/net
+              name: host-net
       volumes:
-        - name: host-net
-          hostPath:
-            path: /sys/class/net
         - name: host-dev
           hostPath:
             path: /dev
+        - name: host-net
+          hostPath:
+            path: /sys/class/net
 
 ---
 apiVersion: v1
