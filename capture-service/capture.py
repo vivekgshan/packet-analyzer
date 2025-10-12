@@ -26,40 +26,37 @@ import psutil, socket, os, logging
 
 def get_best_iface():
     """
-    Detect the best network interface:
-    - Works for Docker, Compose, and Kubernetes (DaemonSet on hostNetwork)
-    - Uses both psutil and /host-net (mounted hostPath)
+    Auto-detects the best NIC for packet capture.
+    ✅ Works for Docker, Compose, and Kubernetes (DaemonSet with hostNetwork)
     """
     try:
-        ifaces = list(psutil.net_if_addrs().keys())
-        logging.info(f"🔍 Interfaces detected inside container: {ifaces}")
-
-        # Prefer visible physical-like NICs
-        preferred = [i for i in ifaces if i.lower().startswith(("en", "eth1", "eno", "ens"))]
-        for iface in preferred + ifaces:
-            addrs = psutil.net_if_addrs().get(iface, [])
-            for addr in addrs:
-                if addr.family == socket.AF_INET and not addr.address.startswith("127."):
-                    logging.info(f"🧠 Selected in-container NIC: {iface} ({addr.address})")
-                    return iface
-
-        # 🧩 Fallback: try mounted host /sys/class/net
+        # 🧩 1. Check mounted host interfaces first
         host_net_path = "/host-net"
         if os.path.exists(host_net_path):
             host_ifaces = [i for i in os.listdir(host_net_path)
                            if not i.startswith(("lo", "veth", "docker", "cni", "azv"))]
             logging.info(f"🌐 Host interfaces from /host-net: {host_ifaces}")
             for iface in host_ifaces:
-                if iface.lower().startswith(("en", "ens", "eno", "eth1")):
+                if iface.lower().startswith(("en", "ens", "eno")):
                     logging.info(f"🧠 Selected host NIC: {iface}")
                     return iface
 
-        logging.info("⚙️ No physical NICs found; using eth0 fallback.")
+        # 🧩 2. Otherwise, inspect in-container NICs
+        ifaces = list(psutil.net_if_addrs().keys())
+        logging.info(f"🔍 Container-visible interfaces: {ifaces}")
+
+        for iface in ifaces:
+            addrs = psutil.net_if_addrs().get(iface, [])
+            for addr in addrs:
+                if addr.family == socket.AF_INET and not addr.address.startswith("127."):
+                    logging.info(f"🧠 Selected container NIC: {iface} ({addr.address})")
+                    return iface
+
+        logging.warning("⚙️ No suitable NIC found; using eth0 as fallback")
     except Exception as e:
         logging.warning(f"⚠️ Interface auto-detect failed: {e}")
 
     return "eth0"
-
 
 
 # -------------------------------------------------------
