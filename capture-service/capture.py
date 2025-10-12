@@ -27,28 +27,23 @@ from subprocess import check_output
 
 def detect_best_interface():
     """
-    Detect the correct interface automatically.
-    Works in both Docker Compose (host mode) and Kubernetes DaemonSet (hostNetwork).
+    Detects the best network interface for sniffing.
+    Works for both Docker Compose (host mode) and Kubernetes DaemonSet (hostNetwork).
     """
+    runtime = os.getenv("RUNTIME", "docker").lower()
 
-    runtime = os.getenv("RUNTIME", "k8s").lower()
-
-    # Step 1: Try route-based detection (strongest)
+    # 1️⃣ Try route-based detection (most accurate)
     try:
-        # Linux only: finds interface that routes to 8.8.8.8
         route_info = check_output("ip route get 8.8.8.8", shell=True).decode()
-        for token in route_info.split():
-            if token == "dev":
-                iface = route_info.split()[route_info.split().index("dev") + 1]
-                logging.info(f"🧠 Route-based active NIC: {iface}")
-                return iface
+        if "dev" in route_info:
+            iface = route_info.split()[route_info.split().index("dev") + 1]
+            logging.info(f"🧠 Route-based active NIC: {iface}")
+            return iface
     except Exception as e:
-        logging.warning(f"⚠️ Route-based NIC detection failed: {e}")
+        logging.warning(f"⚠️ Route detection failed: {e}")
 
-    # Step 2: Fallback — filter from psutil
+    # 2️⃣ Fall back to psutil
     interfaces = psutil.net_if_addrs()
-    preferred = None
-
     for iface, addrs in interfaces.items():
         for addr in addrs:
             if (
@@ -56,16 +51,11 @@ def detect_best_interface():
                 and not addr.address.startswith("127.")
                 and not iface.startswith(("azv", "br-", "docker"))
             ):
-                if iface.startswith(("en", "eth")):
-                    logging.info(f"🧠 Selected active NIC: {iface} ({addr.address})")
-                    return iface
-                if not preferred:
-                    preferred = iface
+                logging.info(f"🧠 Fallback active NIC: {iface} ({addr.address})")
+                return iface
 
-    # Step 3: Last resort fallback
-    fallback = preferred or "eth0"
-    logging.info(f"⚙️ Fallback NIC: {fallback}")
-    return fallback
+    logging.info("⚙️ Defaulting to eth0")
+    return "eth0"
 
 # -------------------------------------------------------
 # Packet sending
