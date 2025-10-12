@@ -330,8 +330,6 @@ spec:
             - name: host-net
               mountPath: /sys/class/net
               readOnly: true
-            - name: host-dev
-              mountPath: /dev
             - name: host-proc
               mountPath: /proc
               readOnly: true
@@ -339,9 +337,6 @@ spec:
         - name: host-net
           hostPath:
             path: /sys/class/net
-        - name: host-dev
-          hostPath:
-            path: /dev
         - name: host-proc
           hostPath:
             path: /proc
