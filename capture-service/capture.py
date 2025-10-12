@@ -23,39 +23,37 @@ packet_count, last_log_time = 0, time.time()
 # Interface auto-detection logic
 # -------------------------------------------------------
 import psutil, socket, os, logging
-from subprocess import check_output
 
 def detect_best_interface():
     """
-    Detects the best network interface for sniffing.
-    Works for both Docker Compose (host mode) and Kubernetes DaemonSet (hostNetwork).
+    Detects the most suitable interface for sniffing.
+    Works in both Docker Compose and Kubernetes DaemonSet.
     """
     runtime = os.getenv("RUNTIME", "docker").lower()
 
-    # 1️⃣ Try route-based detection (most accurate)
     try:
-        route_info = check_output("ip route get 8.8.8.8", shell=True).decode()
-        if "dev" in route_info:
-            iface = route_info.split()[route_info.split().index("dev") + 1]
-            logging.info(f"🧠 Route-based active NIC: {iface}")
-            return iface
+        # 1️⃣ For Kubernetes with host mount: check /sys/class/net
+        if runtime == "k8s" and os.path.exists("/sys/class/net"):
+            nets = os.listdir("/sys/class/net")
+            # Prefer external NICs (en*, eth*, ens*)
+            for iface in nets:
+                if iface.startswith(("en", "eth")) and iface not in ("eth0", "lo"):
+                    logging.info(f"🧠 Host-level NIC detected via /sys/class/net: {iface}")
+                    return iface
+
+        # 2️⃣ Fallback: psutil-based detection
+        for iface, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.family == socket.AF_INET and not addr.address.startswith("127."):
+                    if iface.startswith(("en", "eth", "ens", "eno")):
+                        logging.info(f"🧠 Fallback psutil NIC: {iface}")
+                        return iface
+        logging.info("⚙️ Defaulting to eth0")
+        return "eth0"
+
     except Exception as e:
-        logging.warning(f"⚠️ Route detection failed: {e}")
-
-    # 2️⃣ Fall back to psutil
-    interfaces = psutil.net_if_addrs()
-    for iface, addrs in interfaces.items():
-        for addr in addrs:
-            if (
-                addr.family == socket.AF_INET
-                and not addr.address.startswith("127.")
-                and not iface.startswith(("azv", "br-", "docker"))
-            ):
-                logging.info(f"🧠 Fallback active NIC: {iface} ({addr.address})")
-                return iface
-
-    logging.info("⚙️ Defaulting to eth0")
-    return "eth0"
+        logging.warning(f"⚠️ NIC detection failed, using eth0: {e}")
+        return "eth0"
 
 # -------------------------------------------------------
 # Packet sending
