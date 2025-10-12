@@ -24,25 +24,27 @@ packet_count, last_log_time = 0, time.time()
 # -------------------------------------------------------
 def get_best_iface():
     """
-    Auto-detects the most appropriate interface:
-    - In K8s hostNetwork pods → picks the first real NIC (en*, ens*, eno*, eth1+)
-    - In Docker → prefers eth0
-    - Fallback: auto-detect via route to 8.8.8.8
+    Auto-detect the most appropriate interface:
+    - Prefer host NICs (en*, eth1+, etc.)
+    - Works for Azure/AWS EC2 naming (enP*, ens*, eno*)
+    - Falls back to eth0 if nothing else found
     """
     candidates = []
     try:
         for iface in psutil.net_if_addrs().keys():
-            if iface.startswith(("enp", "ens", "eno")):
+            # ✅ more flexible matching: match both lowercase and uppercase prefixes
+            if iface.lower().startswith(("en", "eth1", "eno", "ens")):
                 candidates.append(iface)
+
         if not candidates:
-            # fallback to other visible NICs except loopback/docker
             candidates = [i for i in psutil.net_if_addrs().keys()
                           if not i.startswith(("lo", "docker", "veth", "cni", "azv"))]
+
         if candidates:
             logging.info(f"🧠 Auto-detected host NICs: {candidates}")
             return candidates[0]
 
-        # fallback to route-based detection
+        # Fallback via default route
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         local_ip = s.getsockname()[0]
