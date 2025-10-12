@@ -299,38 +299,34 @@ spec:
                 - NET_RAW
           ports:
             - containerPort: 5004
-              name: http
           env:
             - name: SERVICE_PORT
               value: "5004"
             - name: MODE
               value: "LIVE"
-            # ✅ Use the NodePort for parser-service communication
             - name: PARSER_URL
               value: "http://127.0.0.1:31474"
             - name: LOG_LEVEL
               value: "INFO"
           volumeMounts:
-            - name: host-sys
-              mountPath: /sys
+            - name: host-net
+              mountPath: /sys/class/net
               readOnly: true
             - name: host-dev
               mountPath: /dev
-              readOnly: true
             - name: host-proc
               mountPath: /proc
               readOnly: true
       volumes:
-        - name: host-sys
+        - name: host-net
           hostPath:
-            path: /sys
+            path: /sys/class/net
         - name: host-dev
           hostPath:
             path: /dev
         - name: host-proc
           hostPath:
             path: /proc
-
 
 ---
 apiVersion: v1
