@@ -285,7 +285,7 @@ spec:
       labels:
         app: capture-service
     spec:
-      # ✅ Allow pod to sniff all host + pod traffic
+      # ✅ Allow access to host interfaces & network
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
 
@@ -294,14 +294,12 @@ spec:
         image: ramanji9550/capture-service:latest
         imagePullPolicy: Always
         ports:
-        - containerPort: 5004
+          - containerPort: 5004
         env:
-        - name: SERVICE_PORT
-          value: "5004"
-        - name: PARSER_URL
-          value: "http://parser-service:5001"
-        - name: RUNTIME
-          value: "k8s"      # used to differentiate from docker-compose
+          - name: SERVICE_PORT
+            value: "5004"
+          - name: PARSER_URL
+            value: "http://parser-service:5001"
         securityContext:
           privileged: true
           allowPrivilegeEscalation: true
@@ -310,36 +308,29 @@ spec:
               - NET_ADMIN
               - NET_RAW
 
+        # ✅ Mount host NIC & device directories
         volumeMounts:
-          # Access host's NIC and device interfaces
+          - name: host-net
+            mountPath: /host-net
           - name: host-dev
             mountPath: /dev
-          # Access host NIC metadata (interface names)
-          - name: host-sys
-            mountPath: /sys
-          # Optional: mount /proc for more visibility
-          - name: host-proc
-            mountPath: /host_proc
-            readOnly: true
 
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 5004
-          initialDelaySeconds: 5
-          periodSeconds: 10
+        # ✅ Optional: small startup command to print detected host NIC before Flask runs
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "🔍 Available host interfaces:"; ls /host-net;
+            echo "🚀 Starting capture-service..."; 
+            python3 /app/capture.py
 
-      # 🧩 Volumes to expose host network devices & metadata
       volumes:
-      - name: host-dev
-        hostPath:
-          path: /dev
-      - name: host-sys
-        hostPath:
-          path: /sys
-      - name: host-proc
-        hostPath:
-          path: /proc
+        - name: host-net
+          hostPath:
+            path: /sys/class/net
+        - name: host-dev
+          hostPath:
+            path: /dev
+
 ---
 apiVersion: v1
 kind: Service
@@ -352,6 +343,6 @@ spec:
   selector:
     app: capture-service
   ports:
-  - name: http
-    port: 5004
-    targetPort: 5004
+    - port: 5004
+      targetPort: 5004
+  type: ClusterIP
