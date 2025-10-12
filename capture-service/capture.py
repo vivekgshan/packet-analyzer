@@ -26,39 +26,40 @@ import psutil, socket, logging
 
 def get_best_iface():
     """
-    Auto-detects the most relevant interface for sniffing.
-    Works in Docker, Kubernetes, and host modes.
-    Prefers physical NICs like enp*, ens*, eno*, enP*, eth1+ over eth0.
-    Falls back gracefully.
+    Auto-detect the best interface (host or pod):
+    ✅ Works for Docker, EC2, Azure AKS DaemonSet
+    ✅ Prefers physical NICs (en*, eth1+, enP*, ens*, eno*)
+    ✅ Includes Azure private 10.x ranges
     """
     try:
-        # 1️⃣ Get all interfaces
         ifaces = list(psutil.net_if_addrs().keys())
         logging.info(f"🔍 Interfaces detected: {ifaces}")
 
-        # 2️⃣ Filter out virtual and internal ones
+        # Filter out purely virtual or loopback
         filtered = [i for i in ifaces if not i.startswith(("lo", "docker", "veth", "cni", "azv"))]
 
-        # 3️⃣ Prefer physical NIC naming patterns (case-insensitive)
+        # Prioritize physical NIC patterns
         preferred = [i for i in filtered if i.lower().startswith(("en", "eth1", "eno", "ens"))]
 
-        # 4️⃣ If we have preferred, pick the one with the real IP
-        for iface in preferred:
+        # Examine each interface for a valid IPv4 address
+        for iface in preferred + filtered:
             addrs = psutil.net_if_addrs().get(iface, [])
             for addr in addrs:
-                if addr.family == socket.AF_INET and not addr.address.startswith(("127.", "10.244.", "10.224.")):
-                    logging.info(f"🧠 Selected host NIC: {iface} ({addr.address})")
-                    return iface
+                if addr.family == socket.AF_INET:
+                    ip = addr.address
+                    if not ip.startswith(("127.")):  # exclude only loopback
+                        logging.info(f"🧠 Selected active NIC: {iface} ({ip})")
+                        return iface
 
-        # 5️⃣ Otherwise, fallback to first filtered or eth0
+        # fallback if nothing found
         if filtered:
             logging.info(f"⚙️ Using fallback NIC: {filtered[0]}")
             return filtered[0]
     except Exception as e:
         logging.warning(f"⚠️ Interface auto-detect failed: {e}")
 
-    # Fallback
     return "eth0"
+
 
 # -------------------------------------------------------
 # Packet sending
