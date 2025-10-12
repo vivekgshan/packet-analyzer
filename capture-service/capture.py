@@ -22,42 +22,42 @@ packet_count, last_log_time = 0, time.time()
 # -------------------------------------------------------
 # Interface auto-detection logic
 # -------------------------------------------------------
+import psutil, socket, logging
+
 def get_best_iface():
     """
-    Auto-detect the most appropriate interface:
-    - Prefer host NICs (en*, eth1+, etc.)
-    - Works for Azure/AWS EC2 naming (enP*, ens*, eno*)
-    - Falls back to eth0 if nothing else found
+    Auto-detects the most relevant interface for sniffing.
+    Works in Docker, Kubernetes, and host modes.
+    Prefers physical NICs like enp*, ens*, eno*, enP*, eth1+ over eth0.
+    Falls back gracefully.
     """
-    candidates = []
     try:
-        for iface in psutil.net_if_addrs().keys():
-            # ✅ more flexible matching: match both lowercase and uppercase prefixes
-            if iface.lower().startswith(("en", "eth1", "eno", "ens")):
-                candidates.append(iface)
+        # 1️⃣ Get all interfaces
+        ifaces = list(psutil.net_if_addrs().keys())
+        logging.info(f"🔍 Interfaces detected: {ifaces}")
 
-        if not candidates:
-            candidates = [i for i in psutil.net_if_addrs().keys()
-                          if not i.startswith(("lo", "docker", "veth", "cni", "azv"))]
+        # 2️⃣ Filter out virtual and internal ones
+        filtered = [i for i in ifaces if not i.startswith(("lo", "docker", "veth", "cni", "azv"))]
 
-        if candidates:
-            logging.info(f"🧠 Auto-detected host NICs: {candidates}")
-            return candidates[0]
+        # 3️⃣ Prefer physical NIC naming patterns (case-insensitive)
+        preferred = [i for i in filtered if i.lower().startswith(("en", "eth1", "eno", "ens"))]
 
-        # Fallback via default route
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
-        for iface, addrs in psutil.net_if_addrs().items():
-            if any(addr.address == local_ip for addr in addrs):
-                return iface
+        # 4️⃣ If we have preferred, pick the one with the real IP
+        for iface in preferred:
+            addrs = psutil.net_if_addrs().get(iface, [])
+            for addr in addrs:
+                if addr.family == socket.AF_INET and not addr.address.startswith(("127.", "10.244.", "10.224.")):
+                    logging.info(f"🧠 Selected host NIC: {iface} ({addr.address})")
+                    return iface
+
+        # 5️⃣ Otherwise, fallback to first filtered or eth0
+        if filtered:
+            logging.info(f"⚙️ Using fallback NIC: {filtered[0]}")
+            return filtered[0]
     except Exception as e:
-        logging.warning(f"⚠️ Interface detection failed: {e}")
-    finally:
-        try:
-            s.close()
-        except Exception:
-            pass
+        logging.warning(f"⚠️ Interface auto-detect failed: {e}")
+
+    # Fallback
     return "eth0"
 
 # -------------------------------------------------------
