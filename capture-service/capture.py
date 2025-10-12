@@ -22,27 +22,50 @@ packet_count, last_log_time = 0, time.time()
 # -------------------------------------------------------
 # Interface auto-detection logic
 # -------------------------------------------------------
-import psutil, socket, logging
+import psutil, socket, os, logging
+from subprocess import check_output
 
-def get_active_interface():
+def detect_best_interface():
+    """
+    Detect the correct interface automatically.
+    Works in both Docker Compose (host mode) and Kubernetes DaemonSet (hostNetwork).
+    """
+
+    runtime = os.getenv("RUNTIME", "k8s").lower()
+
+    # Step 1: Try route-based detection (strongest)
+    try:
+        # Linux only: finds interface that routes to 8.8.8.8
+        route_info = check_output("ip route get 8.8.8.8", shell=True).decode()
+        for token in route_info.split():
+            if token == "dev":
+                iface = route_info.split()[route_info.split().index("dev") + 1]
+                logging.info(f"🧠 Route-based active NIC: {iface}")
+                return iface
+    except Exception as e:
+        logging.warning(f"⚠️ Route-based NIC detection failed: {e}")
+
+    # Step 2: Fallback — filter from psutil
     interfaces = psutil.net_if_addrs()
-    candidate = None
+    preferred = None
 
     for iface, addrs in interfaces.items():
         for addr in addrs:
-            # Skip loopback & docker bridge
-            if addr.family == socket.AF_INET and not addr.address.startswith("127.") and not iface.startswith("azv"):
-                # Detect real NIC (enp, eth, ens)
+            if (
+                addr.family == socket.AF_INET
+                and not addr.address.startswith("127.")
+                and not iface.startswith(("azv", "br-", "docker"))
+            ):
                 if iface.startswith(("en", "eth")):
                     logging.info(f"🧠 Selected active NIC: {iface} ({addr.address})")
                     return iface
-                if not candidate:
-                    candidate = iface
-    # fallback
-    fallback = candidate or list(interfaces.keys())[0]
-    logging.info(f"⚙️ Using fallback NIC: {fallback}")
-    return fallback
+                if not preferred:
+                    preferred = iface
 
+    # Step 3: Last resort fallback
+    fallback = preferred or "eth0"
+    logging.info(f"⚙️ Fallback NIC: {fallback}")
+    return fallback
 
 # -------------------------------------------------------
 # Packet sending
