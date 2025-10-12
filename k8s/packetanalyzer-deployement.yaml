@@ -301,16 +301,13 @@ spec:
             - containerPort: 5004
               name: http
           env:
-            # UI & Parser Config
             - name: SERVICE_PORT
               value: "5004"
             - name: MODE
               value: "LIVE"
-            # ✅ NodePort mapping — update port below if different in your cluster
+            # ✅ Use the NodePort for parser-service communication
             - name: PARSER_URL
-              value: "http://127.0.0.1:31501"
-
-            # Optional environment flags for visibility
+              value: "http://127.0.0.1:31474"
             - name: LOG_LEVEL
               value: "INFO"
           volumeMounts:
@@ -333,6 +330,7 @@ spec:
         - name: host-proc
           hostPath:
             path: /proc
+
 
 ---
 apiVersion: v1
