@@ -274,6 +274,8 @@ kind: DaemonSet
 metadata:
   name: capture-service
   namespace: packetanalyzer
+  labels:
+    app: capture-service
 spec:
   selector:
     matchLabels:
@@ -284,33 +286,53 @@ spec:
         app: capture-service
     spec:
       hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet  # 👈 Important line
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: capture-service
           image: ramanji9550/capture-service:latest
-          ports:
-            - containerPort: 5004
-          env:
-            - name: SERVICE_PORT
-              value: "5004"
-            - name: PARSER_URL
-              value: "http://parser-service.packetanalyzer.svc.cluster.local:5001"
+          imagePullPolicy: Always
           securityContext:
             privileged: true
             capabilities:
-              add: ["NET_ADMIN", "NET_RAW"]
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          ports:
+            - containerPort: 5004
+              name: http
+          env:
+            # UI & Parser Config
+            - name: SERVICE_PORT
+              value: "5004"
+            - name: MODE
+              value: "LIVE"
+            # ✅ NodePort mapping — update port below if different in your cluster
+            - name: PARSER_URL
+              value: "http://127.0.0.1:31501"
+
+            # Optional environment flags for visibility
+            - name: LOG_LEVEL
+              value: "INFO"
           volumeMounts:
-            - mountPath: /dev
-              name: host-dev
-            - mountPath: /sys/class/net
-              name: host-net
+            - name: host-sys
+              mountPath: /sys
+              readOnly: true
+            - name: host-dev
+              mountPath: /dev
+              readOnly: true
+            - name: host-proc
+              mountPath: /proc
+              readOnly: true
       volumes:
+        - name: host-sys
+          hostPath:
+            path: /sys
         - name: host-dev
           hostPath:
             path: /dev
-        - name: host-net
+        - name: host-proc
           hostPath:
-            path: /sys/class/net
+            path: /proc
 
 ---
 apiVersion: v1
