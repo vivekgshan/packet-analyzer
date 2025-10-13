@@ -4,39 +4,42 @@ from scapy.utils import PcapReader
 import requests, time, os, threading, logging, psutil, socket
 
 # -------------------------------------------------------
-# Initialization
+# Runtime detection
 # -------------------------------------------------------
+RUNTIME = os.getenv("RUNTIME", "").lower()
+USE_DOCKER = "compose" in RUNTIME or os.path.exists("/.dockerenv")
+
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# -------------------------------------------------------
+# Global vars
+# -------------------------------------------------------
 PARSER_URL = os.getenv("PARSER_URL", "http://parser-service:5001")
-sniffer_obj, current_iface = None, None
+sniffer_obj, current_iface, last_error = None, None, None
 packet_count, last_log_time = 0, time.time()
 
 # -------------------------------------------------------
 # Interface auto-detection logic
 # -------------------------------------------------------
 def detect_best_interface():
-    """Detect best available interface for sniffing (K8s or Docker)."""
+    """
+    Detects the most suitable interface for sniffing.
+    Works in both Docker Compose and Kubernetes DaemonSet.
+    """
     runtime = os.getenv("RUNTIME", "docker").lower()
 
     try:
-        # 1️⃣ Prefer real host NICs if running in Kubernetes
+        # 1️⃣ For Kubernetes with host mount: check /sys/class/net
         if runtime == "k8s" and os.path.exists("/sys/class/net"):
             nets = os.listdir("/sys/class/net")
-            logging.info(f"🔍 Container-visible interfaces: {nets}")
+            # Prefer external NICs (en*, eth*, ens*, eno*)
+            for iface in nets:
+                if iface.startswith(("en", "eth", "ens", "eno")) and iface not in ("eth0", "lo"):
+                    logging.info(f"🧠 Host-level NIC detected via /sys/class/net: {iface}")
+                    return iface
 
-            # Prefer any en* or non-eth0 interface first
-            preferred = [n for n in nets if n.startswith(("en", "eth")) and n not in ("eth0", "lo")]
-            if preferred:
-                iface = preferred[0]
-                logging.info(f"🧠 Host-level NIC detected via /sys/class/net: {iface}")
-                return iface
-            else:
-                logging.info("⚙️ No host NIC found, defaulting to eth0")
-                return "eth0"
-
-        # 2️⃣ Fallback for Docker Compose
+        # 2️⃣ Fallback: psutil-based detection
         for iface, addrs in psutil.net_if_addrs().items():
             for addr in addrs:
                 if addr.family == socket.AF_INET and not addr.address.startswith("127."):
@@ -50,9 +53,6 @@ def detect_best_interface():
         logging.warning(f"⚠️ NIC detection failed, using eth0: {e}")
         return "eth0"
 
-
-current_iface = detect_best_interface()
-logging.info(f"✅ Using interface: {current_iface}")
 
 # -------------------------------------------------------
 # Packet sending
@@ -83,38 +83,45 @@ def send_packet(pkt, source="LIVE"):
     except Exception as e:
         logging.error(f"❌ Error sending to parser: {e}")
 
+
 # -------------------------------------------------------
-# Sniffer logic
+# Sniffer
 # -------------------------------------------------------
 def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
     global sniffer_obj, current_iface
-    iface = iface_override or current_iface
+    iface = iface_override or detect_best_interface()
     current_iface = iface
 
-    try:
-        if mode.upper() == "LIVE":
-            logging.info(f"🔴 Starting LIVE sniffing on {iface}")
-            sniffer_obj = AsyncSniffer(iface=iface,
-                                       prn=lambda pkt: send_packet(pkt, source="LIVE"),
-                                       store=False)
-            sniffer_obj.start()
-        else:
-            file_to_read = pcap_file or "sample-pcaps/dns.cap"
-            logging.info(f"🔵 Reading from PCAP file: {file_to_read}")
+    # ✅ Force raw sockets when running in Kubernetes
+    if os.getenv("RUNTIME", "").lower() == "k8s":
+        from scapy.config import conf
+        conf.use_pcap = False
+        logging.info("🧠 K8s runtime detected — forcing raw socket sniffing")
+
+    if mode.upper() == "LIVE":
+        logging.info(f"🔴 Starting LIVE sniffing on {iface}")
+        sniffer_obj = AsyncSniffer(
+            iface=iface,
+            store=False,
+            prn=lambda pkt: send_packet(pkt, source="LIVE")
+        )
+        sniffer_obj.start()
+    else:
+        file_to_read = pcap_file or "sample-pcaps/dns.cap"
+        logging.info(f"🔵 Reading from PCAP file: {file_to_read}")
+        try:
+            packets = rdpcap(file_to_read)
+        except Exception:
             try:
-                packets = rdpcap(file_to_read)
-            except Exception:
-                try:
-                    with PcapReader(file_to_read) as pcap_reader:
-                        packets = [pkt for pkt in pcap_reader]
-                except Exception as e2:
-                    logging.error(f"❌ Could not read {file_to_read}: {e2}")
-                    packets = []
-            for pkt in packets:
-                send_packet(pkt, source="PCAP")
-            logging.info("🎉 Finished replaying packets.")
-    except Exception as e:
-        logging.error(f"❌ Sniffer failed: {e}")
+                with PcapReader(file_to_read) as pcap_reader:
+                    packets = [pkt for pkt in pcap_reader]
+            except Exception as e2:
+                logging.error(f"❌ Could not read {file_to_read}: {e2}")
+                packets = []
+        for pkt in packets:
+            send_packet(pkt, source="PCAP")
+        logging.info("🎉 Finished replaying packets.")
+
 
 # -------------------------------------------------------
 # Flask API
@@ -131,42 +138,53 @@ def start_sniffing():
     iface = request.args.get("iface", current_iface)
     pcap_file = request.args.get("file")
 
-    if iface not in psutil.net_if_addrs():
-        logging.warning(f"⚠️ Invalid iface={iface}, fallback to {current_iface}")
+    valid_ifaces = psutil.net_if_addrs().keys()
+    if iface not in valid_ifaces:
+        logging.warning(f"⚠️ Interface {iface} not found, defaulting to {current_iface}")
         iface = current_iface
 
     logging.info(f"🚀 Starting sniffing on iface={iface} mode={mode}")
-    thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
-    thread.start()
-    return jsonify({"status": "sniffing_started", "iface": iface}), 200
+    try:
+        sniffer_thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
+        sniffer_thread.start()
+        return jsonify({"status": "sniffing_started", "iface": iface}), 200
+    except Exception as e:
+        logging.error(f"❌ Error starting sniffer: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/stop_sniffing", methods=["POST"])
 def stop_sniffing():
     global sniffer_obj
-    if sniffer_obj and getattr(sniffer_obj, "running", False):
+    if sniffer_obj and sniffer_obj.running:
         sniffer_obj.stop()
         sniffer_obj = None
         logging.info("🛑 Sniffer stopped")
     return jsonify({"status": "stopped"})
 
+
 @app.route("/interfaces", methods=["GET"])
 def list_interfaces():
+    names = list(psutil.net_if_addrs().keys())
     hide_prefixes = ("vcan", "tun", "tap", "cni", "wg", "azv")
-    filtered = [n for n in psutil.net_if_addrs().keys() if not n.startswith(hide_prefixes)]
+    filtered = [n for n in names if not n.startswith(hide_prefixes)]
     return jsonify({"interfaces": filtered})
+
 
 @app.route("/status", methods=["GET"])
 def status():
-    is_running = sniffer_obj and getattr(sniffer_obj, "running", False)
+    is_running = sniffer_obj and sniffer_obj.running
     return jsonify({
         "running": is_running,
         "iface": current_iface,
         "parser_url": PARSER_URL
     })
 
+
 @app.route("/health", methods=["GET"])
 def health():
     return "OK", 200
+
 
 @app.route("/", methods=["GET"])
 def root():
@@ -175,8 +193,12 @@ def root():
         "available_endpoints": ["/health", "/start_sniffing", "/stop_sniffing", "/status", "/interfaces"]
     })
 
+
 # -------------------------------------------------------
 # Main
 # -------------------------------------------------------
 if __name__ == "__main__":
+    mode = os.getenv("MODE", "LIVE")
+    pcap = os.getenv("PCAP_FILE")
+    run_sniffer(mode, pcap)
     app.run(host="0.0.0.0", port=int(os.getenv("SERVICE_PORT", "5004")))
