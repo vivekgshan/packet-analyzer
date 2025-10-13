@@ -21,15 +21,22 @@ def detect_best_interface():
     runtime = os.getenv("RUNTIME", "docker").lower()
 
     try:
-        # ✅ Kubernetes: use host-mounted /sys/class/net
+        # 1️⃣ Prefer real host NICs if running in Kubernetes
         if runtime == "k8s" and os.path.exists("/sys/class/net"):
             nets = os.listdir("/sys/class/net")
-            for iface in nets:
-                if iface.startswith(("en", "eth")) and iface not in ("eth0", "lo"):
-                    logging.info(f"🧠 Host-level NIC detected via /sys/class/net: {iface}")
-                    return iface
+            logging.info(f"🔍 Container-visible interfaces: {nets}")
 
-        # ✅ Docker or fallback
+            # Prefer any en* or non-eth0 interface first
+            preferred = [n for n in nets if n.startswith(("en", "eth")) and n not in ("eth0", "lo")]
+            if preferred:
+                iface = preferred[0]
+                logging.info(f"🧠 Host-level NIC detected via /sys/class/net: {iface}")
+                return iface
+            else:
+                logging.info("⚙️ No host NIC found, defaulting to eth0")
+                return "eth0"
+
+        # 2️⃣ Fallback for Docker Compose
         for iface, addrs in psutil.net_if_addrs().items():
             for addr in addrs:
                 if addr.family == socket.AF_INET and not addr.address.startswith("127."):
@@ -42,6 +49,7 @@ def detect_best_interface():
     except Exception as e:
         logging.warning(f"⚠️ NIC detection failed, using eth0: {e}")
         return "eth0"
+
 
 current_iface = detect_best_interface()
 logging.info(f"✅ Using interface: {current_iface}")
