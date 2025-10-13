@@ -341,7 +341,6 @@ spec:
           hostPath:
             path: /proc
 
-
 ---
 apiVersion: v1
 kind: Service
@@ -357,3 +356,4 @@ spec:
     - port: 5004
       targetPort: 5004
   type: ClusterIP
+
