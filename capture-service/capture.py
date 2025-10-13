@@ -1,18 +1,19 @@
 from flask import Flask, request, jsonify
 from scapy.all import AsyncSniffer, rdpcap
-from scapy.utils import PcapReader
-import requests, time, os, threading, logging, psutil, socket
+import requests, time, os, threading, logging, psutil, socket, struct
 
 # -------------------------------------------------------
 # Runtime detection
 # -------------------------------------------------------
 RUNTIME = os.getenv("RUNTIME", "").lower()
-USE_K8S = RUNTIME == "k8s" or os.path.exists("/var/run/secrets/kubernetes.io")
+USE_K8S = "k8s" in RUNTIME
+USE_DOCKER = not USE_K8S
+
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # -------------------------------------------------------
-# Globals
+# Global vars
 # -------------------------------------------------------
 PARSER_URL = os.getenv("PARSER_URL", "http://parser-service:5001")
 sniffer_obj, current_iface = None, None
@@ -22,30 +23,21 @@ packet_count, last_log_time = 0, time.time()
 # Interface detection
 # -------------------------------------------------------
 def detect_best_interface():
-    """
-    Detects the best interface for packet sniffing.
-    - In Docker Compose, this will be eth0.
-    - In Kubernetes, it checks mounted host NICs under /sys/class/net.
-    """
+    """Detects best interface to sniff packets."""
     try:
         nets = os.listdir("/sys/class/net")
         for iface in nets:
             if iface.startswith(("en", "eth")) and iface not in ("eth0", "lo"):
                 logging.info(f"🧠 Host-level NIC detected via /sys/class/net: {iface}")
                 return iface
-
         # fallback
         for iface, addrs in psutil.net_if_addrs().items():
             for addr in addrs:
                 if addr.family == socket.AF_INET and not addr.address.startswith("127."):
-                    if iface.startswith(("en", "eth")):
-                        logging.info(f"🧠 Fallback psutil NIC: {iface}")
-                        return iface
-        logging.info("⚙️ Defaulting to eth0")
+                    return iface
         return "eth0"
-
     except Exception as e:
-        logging.warning(f"⚠️ NIC detection failed, defaulting to eth0: {e}")
+        logging.warning(f"⚠️ NIC detection failed, using eth0: {e}")
         return "eth0"
 
 # -------------------------------------------------------
@@ -54,88 +46,64 @@ def detect_best_interface():
 def send_packet(pkt, source="LIVE"):
     global packet_count, last_log_time
     packet_count += 1
-
     src_ip, dst_ip = None, None
     if hasattr(pkt, "haslayer") and pkt.haslayer("IP"):
         src_ip = pkt["IP"].src
         dst_ip = pkt["IP"].dst
 
     data = {
-        "raw": pkt.summary() if hasattr(pkt, "summary") else str(pkt)[:80],
+        "raw": pkt.summary() if hasattr(pkt, "summary") else str(pkt),
         "hex": bytes(pkt).hex() if hasattr(pkt, "__bytes__") else "",
         "source": source,
         "src_ip": src_ip,
-        "dst_ip": dst_ip,
+        "dst_ip": dst_ip
     }
 
     try:
         resp = requests.post(PARSER_URL, json=data, timeout=3)
-        if resp.status_code == 200 and (packet_count % 100 == 0 or (time.time() - last_log_time) > 5):
-            logging.info(f"📤 Sent {packet_count} packets (src_ip={src_ip})")
-            last_log_time = time.time()
+        if resp.status_code == 200:
+            if packet_count % 100 == 0 or (time.time() - last_log_time) > 5:
+                logging.info(f"📤 Sent {packet_count} packets (src_ip={src_ip})")
+                last_log_time = time.time()
     except Exception as e:
         logging.error(f"❌ Error sending to parser: {e}")
 
 # -------------------------------------------------------
-# Fallback raw socket sniffer (for host NICs)
+# Raw socket fallback for Kubernetes
 # -------------------------------------------------------
 def raw_sniff_fallback(iface):
-    """Direct raw socket sniffer for host-level NICs (K8s DaemonSet)"""
+    """Raw socket sniffing — works even when Scapy can't attach in K8s."""
     logging.info(f"⚡ Using raw socket fallback on host NIC: {iface}")
     try:
-        s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(3))
-        s.bind((iface, 0))
+        sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(3))
+        sock.bind((iface, 0))
         while True:
-            pkt, addr = s.recvfrom(65535)
-            send_packet(type("FakePkt", (), {
-                "summary": lambda self=pkt: f"RAW_PACKET len={len(pkt)}",
-                "__bytes__": lambda self=pkt: pkt
-            })())
-    except PermissionError:
-        logging.error("❌ Permission denied — ensure NET_ADMIN and privileged=true")
+            raw_data, addr = sock.recvfrom(65535)
+            eth_proto = struct.unpack('!6s6sH', raw_data[:14])[2]
+            send_packet(raw_data[:60], source="RAW")
     except Exception as e:
         logging.error(f"❌ Raw sniff failed on {iface}: {e}")
 
 # -------------------------------------------------------
-# Sniffer logic
+# Sniffer
 # -------------------------------------------------------
-def can_sniff_iface(iface):
-    return iface in psutil.net_if_addrs()
-
 def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
     global sniffer_obj, current_iface
     iface = iface_override or detect_best_interface()
     current_iface = iface
 
-    if mode.upper() == "LIVE":
-        logging.info(f"🔴 Starting LIVE sniffing on {iface}")
-        if can_sniff_iface(iface):
-            logging.info("✅ Scapy interface found — using AsyncSniffer")
-            sniffer_obj = AsyncSniffer(iface=iface, prn=lambda pkt: send_packet(pkt, source="LIVE"), store=False)
-            sniffer_obj.start()
-        else:
-            logging.info("🧠 K8s runtime detected — forcing raw socket sniffing")
-            thread = threading.Thread(target=raw_sniff_fallback, args=(iface,))
-            thread.daemon = True
-            thread.start()
+    if USE_K8S:
+        logging.info("🧠 K8s runtime detected — forcing raw socket sniffing (bypassing Scapy)")
+        thread = threading.Thread(target=raw_sniff_fallback, args=(iface,))
+        thread.daemon = True
+        thread.start()
     else:
-        file_to_read = pcap_file or "sample-pcaps/dns.cap"
-        logging.info(f"🔵 Reading packets from PCAP file: {file_to_read}")
-        try:
-            packets = rdpcap(file_to_read)
-        except Exception:
-            try:
-                with PcapReader(file_to_read) as pcap_reader:
-                    packets = [pkt for pkt in pcap_reader]
-            except Exception as e2:
-                logging.error(f"❌ Could not read {file_to_read}: {e2}")
-                packets = []
-        for pkt in packets:
-            send_packet(pkt, source="PCAP")
-        logging.info("🎉 Finished replaying packets.")
+        logging.info(f"✅ Docker runtime — using AsyncSniffer on {iface}")
+        sniffer_obj = AsyncSniffer(iface=iface, prn=lambda pkt: send_packet(pkt, source="LIVE"), store=False)
+        sniffer_obj.start()
 
 # -------------------------------------------------------
-# Flask API
+# Flask endpoints
 # -------------------------------------------------------
 @app.route("/start_sniffing", methods=["POST"])
 def start_sniffing():
@@ -155,9 +123,8 @@ def start_sniffing():
 
     logging.info(f"🚀 Starting sniffing on iface={iface} mode={mode}")
     try:
-        sniffer_obj = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
-        sniffer_obj.daemon = True
-        sniffer_obj.start()
+        thread = threading.Thread(target=run_sniffer, args=(mode, pcap_file, iface))
+        thread.start()
         return jsonify({"status": "sniffing_started", "iface": iface}), 200
     except Exception as e:
         logging.error(f"❌ Error starting sniffer: {e}")
@@ -174,18 +141,15 @@ def stop_sniffing():
 
 @app.route("/interfaces", methods=["GET"])
 def list_interfaces():
+    names = list(psutil.net_if_addrs().keys())
     hide_prefixes = ("vcan", "tun", "tap", "cni", "wg", "azv")
-    names = [n for n in psutil.net_if_addrs().keys() if not n.startswith(hide_prefixes)]
-    return jsonify({"interfaces": names})
+    filtered = [n for n in names if not n.startswith(hide_prefixes)]
+    return jsonify({"interfaces": filtered})
 
 @app.route("/status", methods=["GET"])
 def status():
     is_running = sniffer_obj and getattr(sniffer_obj, "running", False)
-    return jsonify({
-        "running": is_running,
-        "iface": current_iface,
-        "parser_url": PARSER_URL
-    })
+    return jsonify({"running": is_running, "iface": current_iface, "parser_url": PARSER_URL})
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -199,7 +163,7 @@ def root():
     })
 
 # -------------------------------------------------------
-# Main entry
+# Main
 # -------------------------------------------------------
 if __name__ == "__main__":
     mode = os.getenv("MODE", "LIVE")
