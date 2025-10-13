@@ -321,7 +321,7 @@ spec:
             - name: MODE
               value: "LIVE"
             - name: RUNTIME
-              value: "k8s"
+              value: "k8s"           # ✅ triggers raw socket mode in code
             - name: PARSER_URL
               value: "http://parser-service.packetanalyzer.svc.cluster.local:5001"
             - name: LOG_LEVEL
@@ -330,6 +330,8 @@ spec:
             - name: host-net
               mountPath: /sys/class/net
               readOnly: true
+            - name: host-dev
+              mountPath: /dev
             - name: host-proc
               mountPath: /proc
               readOnly: true
@@ -337,6 +339,9 @@ spec:
         - name: host-net
           hostPath:
             path: /sys/class/net
+        - name: host-dev
+          hostPath:
+            path: /dev
         - name: host-proc
           hostPath:
             path: /proc
