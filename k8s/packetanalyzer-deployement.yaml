@@ -302,53 +302,38 @@ spec:
         app: capture-service
     spec:
       hostNetwork: true
-      hostPID: true                    # 👈 Allow raw socket binding to host
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: capture-service
-          image: ramanji9550/capture-service:latest
+          image: <your_dockerhub_user>/capture-service:debug   # Replace with your DockerHub ID
           imagePullPolicy: Always
           securityContext:
             privileged: true
-            capabilities:
-              add:
-                - NET_ADMIN
-                - NET_RAW
           ports:
             - containerPort: 5004
+              name: http
           env:
             - name: SERVICE_PORT
               value: "5004"
-            - name: MODE
-              value: "LIVE"
-            - name: RUNTIME
-              value: "k8s"
             - name: PARSER_URL
               value: "http://parser-service.packetanalyzer.svc.cluster.local:5001"
             - name: HOST_IFACE
-              value: "enp39s0"         # 👈 EC2 NIC
+              value: "enp39s0"     # EC2 interface
             - name: POD_IFACE
-              value: "eth0"            # 👈 Pod NIC
+              value: "eth0"        # Pod interface
           volumeMounts:
-            - name: host-net
-              mountPath: /sys/class/net
+            - name: resolv-conf
+              mountPath: /etc/resolv.conf
               readOnly: true
-            - name: host-proc
-              mountPath: /proc
-              readOnly: true
-            - name: host-dev
-              mountPath: /dev
-              readOnly: false
       volumes:
-        - name: host-net
+        - name: resolv-conf
           hostPath:
-            path: /sys/class/net
-        - name: host-proc
-          hostPath:
-            path: /proc
-        - name: host-dev
-          hostPath:
-            path: /dev
+            path: /etc/resolv.conf
+            type: File
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
 
 ---
 apiVersion: v1
