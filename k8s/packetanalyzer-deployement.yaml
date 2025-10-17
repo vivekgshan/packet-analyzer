@@ -302,6 +302,7 @@ spec:
         app: capture-service
     spec:
       hostNetwork: true
+      hostPID: true                    # 👈 Allow raw socket binding to host
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: capture-service
@@ -321,30 +322,33 @@ spec:
             - name: MODE
               value: "LIVE"
             - name: RUNTIME
-              value: "k8s"           # ✅ triggers raw socket mode in code
+              value: "k8s"
             - name: PARSER_URL
               value: "http://parser-service.packetanalyzer.svc.cluster.local:5001"
-            - name: LOG_LEVEL
-              value: "INFO"
+            - name: HOST_IFACE
+              value: "enp39s0"         # 👈 EC2 NIC
+            - name: POD_IFACE
+              value: "eth0"            # 👈 Pod NIC
           volumeMounts:
             - name: host-net
               mountPath: /sys/class/net
               readOnly: true
-            - name: host-dev
-              mountPath: /dev
             - name: host-proc
               mountPath: /proc
               readOnly: true
+            - name: host-dev
+              mountPath: /dev
+              readOnly: false
       volumes:
         - name: host-net
           hostPath:
             path: /sys/class/net
-        - name: host-dev
-          hostPath:
-            path: /dev
         - name: host-proc
           hostPath:
             path: /proc
+        - name: host-dev
+          hostPath:
+            path: /dev
 
 ---
 apiVersion: v1
