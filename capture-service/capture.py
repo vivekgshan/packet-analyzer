@@ -89,18 +89,28 @@ def raw_sniff_fallback(iface):
 # -------------------------------------------------------
 def run_sniffer(mode="LIVE", pcap_file=None, iface_override=None):
     global sniffer_obj, current_iface
-    iface = iface_override or detect_best_interface()
-    current_iface = iface
 
-    if USE_K8S:
-        logging.info("🧠 K8s runtime detected — forcing raw socket sniffing (bypassing Scapy)")
-        thread = threading.Thread(target=raw_sniff_fallback, args=(iface,))
-        thread.daemon = True
-        thread.start()
+    host_iface = os.getenv("HOST_IFACE", "enp39s0")
+    pod_iface = os.getenv("POD_IFACE", "eth0")
+    iface_list = [host_iface, pod_iface]
+
+    current_iface = ",".join(iface_list)
+    logging.info(f"🧠 K8s runtime detected — sniffing on host={host_iface}, pod={pod_iface}")
+
+    if mode.upper() == "LIVE":
+        try:
+            # Multi-interface sniff
+            sniffer_obj = AsyncSniffer(
+                iface=iface_list,
+                prn=lambda pkt: send_packet(pkt, source="LIVE"),
+                store=False
+            )
+            sniffer_obj.start()
+            logging.info(f"⚡ Sniffing started on {iface_list}")
+        except Exception as e:
+            logging.error(f"❌ Error starting multi-interface sniffer: {e}")
     else:
-        logging.info(f"✅ Docker runtime — using AsyncSniffer on {iface}")
-        sniffer_obj = AsyncSniffer(iface=iface, prn=lambda pkt: send_packet(pkt, source="LIVE"), store=False)
-        sniffer_obj.start()
+        ...
 
 # -------------------------------------------------------
 # Flask endpoints
