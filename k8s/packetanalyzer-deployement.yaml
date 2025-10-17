@@ -306,7 +306,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: capture-service
-          image: ramanji9550/capture-service:latest   # 🔁 Replace with your image name
+          image: ramanji9550/capture-service:latest  # 🔁 Replace with your image name
           imagePullPolicy: Always
           securityContext:
             privileged: true
@@ -319,24 +319,25 @@ spec:
             - name: PARSER_URL
               value: "http://parser-service.packetanalyzer.svc.cluster.local:5001"
             - name: HOST_IFACE
-              value: "enp39s0"     # ✅ EC2 host interface
+              value: "enp39s0"
             - name: POD_IFACE
-              value: "eth0"        # ✅ Pod interface
+              value: "eth0"
           volumeMounts:
+            - name: host-sys-net
+              mountPath: /host-sys
+              readOnly: true
             - name: resolv-conf
               mountPath: /etc/resolv.conf
               readOnly: true
-            - name: host-sys
-              mountPath: /host-sys
-              readOnly: true
       volumes:
+        - name: host-sys-net
+          hostPath:
+            path: /sys/class/net           # ✅ Mount host network interfaces
+            type: Directory
         - name: resolv-conf
           hostPath:
             path: /etc/resolv.conf
             type: File
-        - name: host-sys
-          hostPath:
-            path: /sys/class/net
       tolerations:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
