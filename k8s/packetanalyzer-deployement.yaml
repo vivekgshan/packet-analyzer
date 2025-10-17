@@ -305,7 +305,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: capture-service
-          image: <your_dockerhub_user>/capture-service:debug   # Replace with your DockerHub ID
+          image: ramanji9550/capture-service:debug   # Replace with your DockerHub ID
           imagePullPolicy: Always
           securityContext:
             privileged: true
