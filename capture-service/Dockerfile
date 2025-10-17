@@ -1,5 +1,11 @@
 FROM python:3.12-slim
 
+# Install debugging and network tools
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        tcpdump curl iproute2 iputils-ping net-tools && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy requirements specific to this service
